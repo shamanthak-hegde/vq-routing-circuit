@@ -101,6 +101,10 @@ def sweep_record(
     if record.corruption_mode == "image_swap":
         assert record.foil_image_path is not None
         foil_img = Image.open(record.foil_image_path).convert("RGB")
+        # Resize foil to clean dimensions so anyres tiling produces the same
+        # number of visual tokens → patch positions align across runs.
+        if foil_img.size != clean_img.size:
+            foil_img = foil_img.resize(clean_img.size, Image.LANCZOS)
         corrupt_emb = foil_embeds(hm, foil_img, record.question)
     else:  # gaussian_noise
         corrupt_emb = noisy_embeds(

@@ -29,7 +29,7 @@ def noisy_embeds(
     clean_image: Image.Image,
     question: str,
     visual_range: tuple[int, int],
-    sigma: float = 0.1,
+    sigma: float = 0.5,
 ) -> torch.Tensor:
     """inputs_embeds (1, S, H) with Gaussian noise on projected visual tokens.
 
