@@ -4,10 +4,10 @@ Abstract VLMHookManager interface.
 Subclasses implement the model-specific parts:
   - _build_prompt      → (input_ids, images_tensor, image_sizes)
   - _prepare_embeds    → (inputs_embeds, n_image_tokens)
-  - _build_token_index → TokenIndex
+  - _call_generate     → raw generate output
 
-Everything else (hook registration, finalization, Capture assembly) is
-handled by the base class so Week-3 ports only override three methods.
+Everything else (hook registration, token classification, Capture assembly)
+is handled by the base class so model ports only override three methods.
 """
 
 from __future__ import annotations
@@ -44,6 +44,24 @@ class VLMHookManager(ABC):
                     f"(found: {impl!r}).  Reload the model with that argument."
                 )
 
+    # ── Module accessors (override in subclasses for different architectures) ──
+
+    def _get_projector(self):
+        """Return the multimodal projector module."""
+        return self.model.model.mm_projector
+
+    def _get_decoder_layers(self):
+        """Return the list of decoder layers."""
+        return self.model.model.layers
+
+    def _get_lm_head(self):
+        """Return the language-model head module."""
+        return self.model.lm_head
+
+    def _get_lm_forward(self):
+        """Return the callable module for the prefill forward pass."""
+        return self.model
+
     # ── Abstract interface (model-specific) ───────────────────────────────────
 
     @abstractmethod
@@ -67,7 +85,6 @@ class VLMHookManager(ABC):
         """
         ...
 
-    @abstractmethod
     def _build_token_index(
         self,
         input_ids,
@@ -75,8 +92,23 @@ class VLMHookManager(ABC):
         prompt_len: int,
         n_generated: int = 0,
     ) -> TokenIndex:
-        """Map every embedding position to a TokenCategory."""
-        ...
+        """Map every embedding position to a TokenCategory.
+
+        Default implementation handles Vicuna-v1 style templates where a
+        single IMAGE_TOKEN_INDEX (-200) sentinel is expanded to n_image_tokens
+        contiguous positions and the ASSISTANT: tag closes the prompt.
+        Override for models with a different token layout.
+        """
+        ids_1d = input_ids[0]
+        cats, vis_range, q_range, ans_start = self._classify_positions(
+            ids_1d, n_image_tokens, prompt_len, n_generated
+        )
+        return TokenIndex(
+            categories=cats,
+            visual_range=vis_range,
+            question_range=q_range,
+            answer_start=ans_start,
+        )
 
     # ── Concrete run methods ──────────────────────────────────────────────────
 
@@ -97,7 +129,10 @@ class VLMHookManager(ABC):
         # Register hooks BEFORE _prepare_embeds so the projector hook fires
         # during the image-embedding step (before the LM forward pass).
         handles, store = register_captures(
-            self.model, capture_attn_weights=self.capture_attention_weights
+            self._get_projector(),
+            self._get_decoder_layers(),
+            self._get_lm_head(),
+            capture_attn_weights=self.capture_attention_weights,
         )
         try:
             inputs_embeds, n_image_tokens = self._prepare_embeds(
@@ -106,7 +141,7 @@ class VLMHookManager(ABC):
             prompt_len = inputs_embeds.shape[1]
             token_index = self._build_token_index(input_ids, n_image_tokens, prompt_len)
 
-            self.model(
+            self._get_lm_forward()(
                 inputs_embeds=inputs_embeds,
                 use_cache=False,
                 output_attentions=False,
@@ -175,7 +210,10 @@ class VLMHookManager(ABC):
                                            n_image_tokens, input_ids)
 
         handles, store = register_captures(
-            self.model, capture_attn_weights=self.capture_attention_weights
+            self._get_projector(),
+            self._get_decoder_layers(),
+            self._get_lm_head(),
+            capture_attn_weights=self.capture_attention_weights,
         )
         try:
             gen_out = self._call_generate(
@@ -186,7 +224,25 @@ class VLMHookManager(ABC):
             remove_handles(handles)
 
         tensors = finalize_store(store)
-        generated_ids = self._extract_generated_ids(gen_out, prompt_len)
+        # When the backend returns per-step scores (output_scores=True), use
+        # len(scores) as the ground-truth decode-step count — sequences may
+        # contain EOS-padding beyond the real generation steps.  Slice the
+        # raw lm_head hook accumulation rather than copying gen_out.scores
+        # (scores are post-logits_processor; the hook fires before any
+        # processor, so its values are raw lm_head output).
+        # Hook layout during VILA-U generate:
+        #   rows 0 … prompt_len-1  → prefill positions
+        #   rows prompt_len …      → forwarded-back decode tokens
+        # So rows [prompt_last : prompt_last + n_scores] give one raw row per
+        # decode decision (step 1 from prefill_last, steps 2+ from decode).
+        # Falls back to the hook accumulation as-is for backends with
+        # logits_to_keep=1 (e.g. LLaVA), which already produce one row/step.
+        if getattr(gen_out, "scores", None):
+            n_scores = len(gen_out.scores)
+            tensors["logits"] = tensors["logits"][prompt_len - 1:][:n_scores]
+            generated_ids = self._extract_generated_ids(gen_out, prompt_len)[:n_scores]
+        else:
+            generated_ids = self._extract_generated_ids(gen_out, prompt_len)
         captured_seq_len = tensors["residual"].shape[1]
         n_generated_captured = max(captured_seq_len - prompt_len, 0)
 
@@ -208,6 +264,70 @@ class VLMHookManager(ABC):
             attn_weights=tensors.get("attn_weights"),
         )
         return cap if device is None else cap.to(device)
+
+    # ── Token classification helpers ─────────────────────────────────────────
+
+    def _locate_assistant_tag(
+        self, ids_1d: torch.Tensor, search_from: int
+    ) -> Optional[int]:
+        """Return the pre-splice index where the ASSISTANT role tag starts.
+
+        Default: length-based detection using self._asst_suffix_len (computed
+        by the subclass).  Override for models with non-Vicuna templates.
+        """
+        suffix_len = getattr(self, "_asst_suffix_len", 0)
+        if suffix_len <= 0:
+            return None
+        return len(ids_1d) - suffix_len
+
+    def _classify_positions(
+        self,
+        ids_1d: torch.Tensor,
+        n_image_tokens: int,
+        prompt_len: int,
+        n_generated: int,
+        image_sentinel: int = -200,
+    ) -> tuple:
+        """Classify embedding positions into TokenCategory values.
+
+        Handles the standard layout:
+          [BOS] [sys+role] [VISUAL×N] [QUESTION] [ASSISTANT-tag (OTHER)] [ANSWER]
+
+        Returns (categories, visual_range, question_range, answer_start).
+        """
+        sentinel_pos = int(
+            (ids_1d == image_sentinel).nonzero(as_tuple=False)[0, 0].item()
+        )
+        pos_img_start = sentinel_pos
+        pos_img_end   = sentinel_pos + n_image_tokens
+        shift = n_image_tokens - 1  # sentinel→N expansion offset
+
+        pos_asst_raw = self._locate_assistant_tag(ids_1d, sentinel_pos + 1)
+
+        categories = torch.zeros(prompt_len + n_generated, dtype=torch.int8)
+        categories[pos_img_start:pos_img_end] = int(TokenCategory.VISUAL)
+
+        if pos_asst_raw is not None:
+            q_start = pos_img_end
+            q_end   = pos_asst_raw + shift
+            if q_start < q_end:
+                categories[q_start:q_end] = int(TokenCategory.QUESTION)
+        else:
+            categories[pos_img_end:prompt_len] = int(TokenCategory.QUESTION)
+
+        if n_generated > 0:
+            categories[prompt_len:prompt_len + n_generated] = int(TokenCategory.ANSWER)
+
+        visual_range = (pos_img_start, pos_img_end)
+        q_mask    = (categories[:prompt_len] == int(TokenCategory.QUESTION))
+        q_indices = q_mask.nonzero(as_tuple=False)
+        question_range = (
+            (int(q_indices[0, 0].item()), int(q_indices[-1, 0].item()) + 1)
+            if q_indices.numel() > 0 else None
+        )
+        answer_start = prompt_len if n_generated > 0 else None
+
+        return categories, visual_range, question_range, answer_start
 
     # ── Helpers (may be overridden) ───────────────────────────────────────────
 

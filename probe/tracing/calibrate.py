@@ -64,8 +64,8 @@ def calibrate_sigma(
         # visual slice: need visual_range; compute via token_index
         # _prepare_embeds expanded one sentinel into n_image_tokens
         # we need the start position of the image block (same logic as _build_token_index)
-        from llava.constants import IMAGE_TOKEN_INDEX
-        sentinel_pos = int((input_ids[0] == IMAGE_TOKEN_INDEX).nonzero(as_tuple=False)[0, 0])
+        # Both LLaVA and VILA-U use -200 as the IMAGE_TOKEN_INDEX sentinel.
+        sentinel_pos = int((input_ids[0] == -200).nonzero(as_tuple=False)[0, 0])
         vlo, vhi = sentinel_pos, sentinel_pos + n_image_tokens
 
         clean = embeds[0, vlo:vhi, :].float()   # (n_vis, H) — float32 for cos-sim precision
@@ -82,16 +82,10 @@ def calibrate_sigma(
 
 def _main():
     import sys, os
-    _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
-    if _llava not in sys.path:
-        sys.path.insert(0, _llava)
-
-    from llava.model.builder import load_pretrained_model
-    from llava.mm_utils import get_model_name_from_path
-    from probe.hooks import LlavaHookManager
-    from probe import load_cache
 
     parser = argparse.ArgumentParser(description="Calibrate sigma for POPE gaussian_noise")
+    parser.add_argument("--backend", default="llava", choices=["llava", "vilau", "vila"],
+                        help="Model backend (default: llava)")
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--n_samples", type=int, default=50)
     parser.add_argument(
@@ -107,14 +101,47 @@ def _main():
         else [0.025, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 4.0]
     )
 
-    print(f"Loading model from {args.model_path} ...")
-    model_name = get_model_name_from_path(args.model_path)
-    tokenizer, model, image_processor, _ = load_pretrained_model(
-        args.model_path, model_base=None, model_name=model_name,
-        attn_implementation="sdpa",
-    )
-    model.eval()
-    hm = LlavaHookManager(model, tokenizer, image_processor)
+    from probe import load_cache
+
+    print(f"Loading {args.backend} model from {args.model_path} ...")
+    if args.backend == "llava":
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.hooks import LlavaHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        model.eval()
+        hm = LlavaHookManager(model, tokenizer, image_processor)
+    elif args.backend == "vilau":
+        _vilau = os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
+        if _vilau not in sys.path:
+            sys.path.insert(0, _vilau)
+        from vila_u.model.builder import load_pretrained_model
+        from probe.hooks import VilaUHookManager
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, attn_implementation="eager",
+        )
+        model.eval()
+        hm = VilaUHookManager(model, tokenizer, image_processor)
+    else:  # vila
+        _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
+        if _vila not in sys.path:
+            sys.path.insert(0, _vila)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.hooks.vila import VilaHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, None, model_name,
+        )
+        model.eval()
+        hm = VilaHookManager(model, tokenizer, image_processor)
 
     records, _, _ = load_cache()
     print(f"Running calibration on {args.n_samples} POPE records ...\n")

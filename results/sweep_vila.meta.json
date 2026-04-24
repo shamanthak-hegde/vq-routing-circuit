@@ -1,0 +1,14 @@
+{
+  "model_path": "Efficient-Large-Model/VILA-7b",
+  "backend": "vila",
+  "sigma": 0.5,
+  "window_size": 4,
+  "n_seeds": 5,
+  "source": "all",
+  "limit": null,
+  "probe_set_hash": "5f06808829c0",
+  "started_at": "2026-04-23T21:57:25.744527+00:00",
+  "finished_at": "2026-04-23T22:39:37.279240+00:00",
+  "n_records_this_run": 433,
+  "n_warn_this_run": 104
+}

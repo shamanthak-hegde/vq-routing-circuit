@@ -16,7 +16,7 @@ from torch import Tensor
 
 @torch.no_grad()
 def run_patched_forward(
-    model,
+    hm,
     corrupted_embeds: Tensor,    # (1, S, H) on model device
     clean_residual: Tensor,      # (n_layers, S, H) — clean_cap.residual, on CPU
     layer_start: int,
@@ -34,7 +34,7 @@ def run_patched_forward(
     """
     device = corrupted_embeds.device
     dtype  = corrupted_embeds.dtype
-    layers = model.model.layers
+    layers = hm._get_decoder_layers()
     handles: list = []
     logit_bucket: list[Tensor] = []
 
@@ -43,7 +43,7 @@ def run_patched_forward(
         t = output[0] if isinstance(output, (tuple, list)) else output
         logit_bucket.append(t.squeeze(0)[prompt_last].detach().cpu())
 
-    handles.append(model.lm_head.register_forward_hook(_lmhead_hook))
+    handles.append(hm._get_lm_head().register_forward_hook(_lmhead_hook))
 
     # ── per-layer overwrite hooks ─────────────────────────────────────────────
     # token_indices and clean slices are prepared once, then captured via closure.
@@ -67,7 +67,7 @@ def run_patched_forward(
         handles.append(layers[l].register_forward_hook(_patch_hook))
 
     try:
-        model(
+        hm._get_lm_forward()(
             inputs_embeds=corrupted_embeds,
             use_cache=False,
             output_attentions=False,

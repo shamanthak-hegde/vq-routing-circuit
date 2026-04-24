@@ -11,10 +11,17 @@ Usage
         --model_path liuhaotian/llava-v1.6-vicuna-7b \\
         --out results/sweep_llava.jsonl
 
+    conda activate vila-u
+    python -m probe.tracing.run_sweep \\
+        --backend vilau \\
+        --model_path mit-han-lab/vila-u-7b-256 \\
+        --out results/sweep_vilau.jsonl
+
 Optional flags
 --------------
+    --backend     llava       "llava" | "vilau" (default "llava")
     --window_size 4          layer-window width (default 4)
-    --sigma       0.5        noise σ for POPE records (default = corrupt.py default)
+    --sigma       <float>    noise σ for POPE records (required; use calibrated value)
     --limit       500        cap number of records (default: all)
     --source      all        "all" | "naturalbench" | "pope"
     --print_heatmap          print aggregate heatmap to stdout when done
@@ -23,12 +30,22 @@ Optional flags
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import time
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _probe_set_hash() -> str:
+    records_json = Path(__file__).parent.parent / "cached" / "records.json"
+    if not records_json.exists():
+        return "unknown"
+    return hashlib.sha256(records_json.read_bytes()).hexdigest()[:12]
+
 
 
 def _load_done_ids(out_path: Path) -> set[str]:
@@ -90,45 +107,71 @@ def _print_heatmap(out_path: Path) -> None:
 
 
 def main() -> None:
-    _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
-    if _llava not in sys.path:
-        sys.path.insert(0, _llava)
-
-    from llava.model.builder import load_pretrained_model
-    from llava.mm_utils import get_model_name_from_path
-    from probe.hooks import LlavaHookManager
-    from probe import load_cache, resolve_answer_token_ids
-    from probe.tracing.sweep import sweep_record
-    from probe.tracing.corrupt import noisy_embeds  # import to read default sigma
-
-    import inspect
-    _default_sigma = inspect.signature(noisy_embeds).parameters["sigma"].default
-
     parser = argparse.ArgumentParser(description="Full probe-set patching sweep")
+    parser.add_argument("--backend", default="llava", choices=["llava", "vilau", "vila"],
+                        help="Model backend (default: llava)")
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--out", default="sweep_results.jsonl",
                         help="Output JSONL file (appended; safe to resume)")
     parser.add_argument("--window_size", type=int, default=4)
-    parser.add_argument("--sigma", type=float, default=_default_sigma)
+    parser.add_argument("--sigma", type=float, required=True,
+                        help="Noise σ for POPE gaussian_noise records (use calibrated value)")
     parser.add_argument("--limit", type=int, default=None,
                         help="Max records to process (default: all)")
     parser.add_argument("--source", default="all",
                         choices=["all", "naturalbench", "pope"])
+    parser.add_argument("--n_seeds", type=int, default=1,
+                        help="Noise seeds to average for POPE records (default 1)")
     parser.add_argument("--print_heatmap", action="store_true")
     args = parser.parse_args()
+    started_at = datetime.now(timezone.utc).isoformat()
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    from probe import load_cache, resolve_answer_token_ids
+    from probe.tracing.sweep import sweep_record
+
     # ── load model ────────────────────────────────────────────────────────────
-    print(f"Loading model from {args.model_path} ...")
-    model_name = get_model_name_from_path(args.model_path)
-    tokenizer, model, image_processor, _ = load_pretrained_model(
-        args.model_path, model_base=None, model_name=model_name,
-        attn_implementation="sdpa",
-    )
-    model.eval()
-    hm = LlavaHookManager(model, tokenizer, image_processor)
+    print(f"Loading {args.backend} model from {args.model_path} ...")
+    if args.backend == "llava":
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.hooks import LlavaHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        model.eval()
+        hm = LlavaHookManager(model, tokenizer, image_processor)
+    elif args.backend == "vilau":
+        _vilau = os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
+        if _vilau not in sys.path:
+            sys.path.insert(0, _vilau)
+        from vila_u.model.builder import load_pretrained_model
+        from probe.hooks import VilaUHookManager
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, attn_implementation="eager",
+        )
+        model.eval()
+        hm = VilaUHookManager(model, tokenizer, image_processor)
+    else:  # vila
+        _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
+        if _vila not in sys.path:
+            sys.path.insert(0, _vila)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.hooks.vila import VilaHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, None, model_name,
+        )
+        model.eval()
+        hm = VilaHookManager(model, tokenizer, image_processor)
 
     # ── load records ──────────────────────────────────────────────────────────
     records, _, _ = load_cache()
@@ -145,7 +188,7 @@ def main() -> None:
     n_total = len(records)
     n_done  = len(done_ids) if done_ids else 0
     print(f"Records: {n_total} total, {n_done} already done, {len(todo)} to run")
-    print(f"window_size={args.window_size}  sigma={args.sigma}  out={out_path}\n")
+    print(f"window_size={args.window_size}  sigma={args.sigma}  n_seeds={args.n_seeds}  out={out_path}\n")
 
     if not todo:
         print("Nothing to do.")
@@ -160,7 +203,7 @@ def main() -> None:
     with out_path.open("a") as fout:
         for i, rec in enumerate(todo, start=1):
             t0 = time.time()
-            rows = sweep_record(hm, rec, window_size=args.window_size, sigma=args.sigma)
+            rows = sweep_record(hm, rec, window_size=args.window_size, sigma=args.sigma, n_seeds=args.n_seeds)
 
             # detect WARN (corruption didn't hurt)
             is_warn = rows[0].logit_clean <= rows[0].logit_corrupt if rows else False
@@ -191,6 +234,24 @@ def main() -> None:
         f"\nDone. {len(todo)} records in {total_elapsed/60:.1f}m  "
         f"({warn_count} WARNs = {100*warn_count/len(todo):.1f}%)"
     )
+
+    meta_path = out_path.with_suffix(".meta.json")
+    meta = {
+        "model_path": args.model_path,
+        "backend": args.backend,
+        "sigma": args.sigma,
+        "window_size": args.window_size,
+        "n_seeds": args.n_seeds,
+        "source": args.source,
+        "limit": args.limit,
+        "probe_set_hash": _probe_set_hash(),
+        "started_at": started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "n_records_this_run": len(todo),
+        "n_warn_this_run": warn_count,
+    }
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+    print(f"Metadata → {meta_path}")
 
     if args.print_heatmap:
         _print_heatmap(out_path)

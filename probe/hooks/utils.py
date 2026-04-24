@@ -41,16 +41,24 @@ def _as_attn_weight(output) -> Optional[Tensor]:
 
 
 def register_captures(
-    model,
+    projector,
+    layers,
+    lm_head,
     capture_attn_weights: bool = False,
 ) -> tuple[list, dict]:
-    """Register all four hook families on *model*.
+    """Register all four hook families on the given modules.
+
+    Parameters
+    ----------
+    projector   : the mm_projector module (post-projection visual output)
+    layers      : iterable of decoder layers (each has .self_attn and .mlp)
+    lm_head     : the language-model head module (produces logits)
+    capture_attn_weights : if True, also register hooks for raw attn weights
 
     Returns
     -------
     handles : list of RemovableHandle
-        Call ``h.remove()`` on each (or use the returned context manager) to
-        detach hooks when done.
+        Call ``h.remove()`` on each to detach hooks when done.
     store : dict
         Keys::
 
@@ -64,8 +72,6 @@ def register_captures(
         The inner lists grow by one entry per forward call (prefill = 1,
         each generate step = 1).  ``finalize_store`` concatenates them.
     """
-    inner = model.model          # LlavaLlamaModel
-    layers = inner.layers
     n_layers = len(layers)
 
     store: dict = {
@@ -82,7 +88,7 @@ def register_captures(
     def _proj_hook(module, inp, output):
         store["projector"].append(output.detach().cpu())
 
-    handles.append(inner.mm_projector.register_forward_hook(_proj_hook))
+    handles.append(projector.register_forward_hook(_proj_hook))
 
     # ── Hooks 2-4: per-layer ─────────────────────────────────────────────────
     for i, layer in enumerate(layers):
@@ -114,7 +120,7 @@ def register_captures(
     def _lmhead_hook(module, inp, output):
         store["lm_head"].append(_as_tensor(output).detach().cpu())
 
-    handles.append(model.lm_head.register_forward_hook(_lmhead_hook))
+    handles.append(lm_head.register_forward_hook(_lmhead_hook))
 
     return handles, store
 

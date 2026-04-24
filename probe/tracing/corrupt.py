@@ -29,7 +29,8 @@ def noisy_embeds(
     clean_image: Image.Image,
     question: str,
     visual_range: tuple[int, int],
-    sigma: float = 0.5,
+    sigma: float,
+    seed: int | None = None,
 ) -> torch.Tensor:
     """inputs_embeds (1, S, H) with Gaussian noise on projected visual tokens.
 
@@ -37,14 +38,26 @@ def noisy_embeds(
     of inputs_embeds after the mm_projector and before the first LM layer.
     The noise tensor is sampled once here so all patching passes for this
     record see the same corruption.
+
+    seed: if set, seeds the RNG locally so different seeds give independent draws
+    while the rest of the program's RNG state is unaffected.
     """
     input_ids, images_tensor, image_sizes = hm._build_prompt(clean_image, question)
     embeds, _ = hm._prepare_embeds(input_ids, images_tensor, image_sizes)
     embeds = embeds.clone()
     lo, hi = visual_range
-    noise = torch.randn(
-        hi - lo, embeds.shape[-1],
-        dtype=embeds.dtype, device=embeds.device,
-    ) * sigma
+    if seed is not None:
+        gen = torch.Generator(device=embeds.device)
+        gen.manual_seed(seed)
+        noise = torch.randn(
+            hi - lo, embeds.shape[-1],
+            dtype=embeds.dtype, device=embeds.device,
+            generator=gen,
+        ) * sigma
+    else:
+        noise = torch.randn(
+            hi - lo, embeds.shape[-1],
+            dtype=embeds.dtype, device=embeds.device,
+        ) * sigma
     embeds[0, lo:hi, :] += noise
     return embeds.detach()

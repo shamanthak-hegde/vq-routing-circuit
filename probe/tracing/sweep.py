@@ -33,11 +33,12 @@ class PatchResult:
     token_group:   str       # "visual" | "question" | "prompt_last"
     score:         float
     logit_clean:   float
-    logit_corrupt: float
-    logit_patched: float
+    logit_corrupt: float     # mean across seeds for POPE multi-seed
+    logit_patched: float     # mean across seeds for POPE multi-seed
+    n_seeds:       int = 1   # number of noise seeds averaged (POPE only)
 
 
-def _forward_logit(model, embeds: Tensor, prompt_last: int, answer_id: int) -> float:
+def _forward_logit(hm, embeds: Tensor, prompt_last: int, answer_id: int) -> float:
     """Minimal forward; returns scalar logit at (prompt_last, answer_id) as float."""
     bucket: list[Tensor] = []
 
@@ -45,10 +46,10 @@ def _forward_logit(model, embeds: Tensor, prompt_last: int, answer_id: int) -> f
         t = output[0] if isinstance(output, (tuple, list)) else output
         bucket.append(t.squeeze(0)[prompt_last, answer_id].detach().cpu())
 
-    h = model.lm_head.register_forward_hook(_hook)
+    h = hm._get_lm_head().register_forward_hook(_hook)
     try:
-        model(inputs_embeds=embeds, use_cache=False,
-              output_attentions=False, return_dict=True)
+        hm._get_lm_forward()(inputs_embeds=embeds, use_cache=False,
+                             output_attentions=False, return_dict=True)
     finally:
         h.remove()
     return float(bucket[0])
@@ -69,12 +70,45 @@ def _token_groups(token_index) -> dict[str, Tensor]:
     return groups
 
 
+def _sweep_one_corrupt(
+    hm,
+    corrupt_emb: Tensor,
+    clean_residual: Tensor,
+    groups: dict[str, Tensor],
+    prompt_last: int,
+    answer_id: int,
+    n_layers: int,
+    window_size: int,
+    logit_clean: float,
+) -> tuple[float, dict[tuple[int, int, str], tuple[float, float]]]:
+    """Run all window × group patching passes for a single corrupt_emb.
+
+    Returns (logit_corrupt, {(l_start, l_end, group): (score, logit_patched)}).
+    """
+    logit_corrupt = _forward_logit(hm, corrupt_emb, prompt_last, answer_id)
+    cell: dict[tuple[int, int, str], tuple[float, float]] = {}
+
+    for l_start in range(0, n_layers, window_size):
+        l_end = min(l_start + window_size, n_layers)
+        for group_name, idx in groups.items():
+            logit_vec = run_patched_forward(
+                hm, corrupt_emb, clean_residual,
+                l_start, l_end, idx, prompt_last,
+            )
+            lp = float(logit_vec[answer_id])
+            sc = normalized_restoration(lp, logit_corrupt, logit_clean)
+            cell[(l_start, l_end, group_name)] = (sc, lp)
+
+    return logit_corrupt, cell
+
+
 @torch.no_grad()
 def sweep_record(
     hm: VLMHookManager,
     record: ProbeRecord,
+    sigma: float,
     window_size: int = 4,
-    sigma: float = 0.1,
+    n_seeds: int = 1,
 ) -> list[PatchResult]:
     """Run the full (window × token_group) sweep for a single probe record.
 
@@ -82,6 +116,10 @@ def sweep_record(
     before sweeping).
 
     Images are loaded from record.image_path / foil_image_path on disk.
+
+    For POPE records, n_seeds > 1 runs that many independent noise draws and
+    averages the resulting scores (per-seed normalization before averaging).
+    NaturalBench records ignore n_seeds (image_swap is deterministic).
     """
     assert record.answer_token_id is not None, (
         f"answer_token_id is None for {record.id}. "
@@ -97,57 +135,65 @@ def sweep_record(
     prompt_last = token_index.prompt_last
     logit_clean = float(clean_cap.logits[prompt_last, answer_id])
 
-    # ── 2. Corrupted inputs_embeds ────────────────────────────────────────────
+    n_layers = len(hm._get_decoder_layers())
+    groups   = _token_groups(token_index)
+
+    # ── 2. Build corrupt embeds and sweep ─────────────────────────────────────
     if record.corruption_mode == "image_swap":
+        # Deterministic — n_seeds doesn't apply
         assert record.foil_image_path is not None
         foil_img = Image.open(record.foil_image_path).convert("RGB")
-        # Resize foil to clean dimensions so anyres tiling produces the same
-        # number of visual tokens → patch positions align across runs.
         if foil_img.size != clean_img.size:
             foil_img = foil_img.resize(clean_img.size, Image.LANCZOS)
         corrupt_emb = foil_embeds(hm, foil_img, record.question)
-    else:  # gaussian_noise
-        corrupt_emb = noisy_embeds(
-            hm, clean_img, record.question,
-            visual_range=token_index.visual_range,
-            sigma=sigma,
+        logit_corrupt, cells = _sweep_one_corrupt(
+            hm, corrupt_emb, clean_cap.residual,
+            groups, prompt_last, answer_id, n_layers, window_size, logit_clean,
         )
+        effective_seeds = 1
+        # Wrap in list to share averaging code below
+        all_corrupt = [logit_corrupt]
+        all_cells   = [cells]
 
-    # ── 3. Corrupted logit (one bare forward, no activation capture) ──────────
-    logit_corrupt = _forward_logit(hm.model, corrupt_emb, prompt_last, answer_id)
+    else:  # gaussian_noise — average over n_seeds independent draws
+        effective_seeds = max(1, n_seeds)
+        all_corrupt: list[float] = []
+        all_cells: list[dict] = []
+        for seed_idx in range(effective_seeds):
+            corrupt_emb = noisy_embeds(
+                hm, clean_img, record.question,
+                visual_range=token_index.visual_range,
+                sigma=sigma,
+                seed=seed_idx,
+            )
+            lc, cells = _sweep_one_corrupt(
+                hm, corrupt_emb, clean_cap.residual,
+                groups, prompt_last, answer_id, n_layers, window_size, logit_clean,
+            )
+            all_corrupt.append(lc)
+            all_cells.append(cells)
 
-    # ── 4. Sweep ──────────────────────────────────────────────────────────────
-    n_layers = len(hm.model.model.layers)
-    groups   = _token_groups(token_index)
+    # ── 3. Average across seeds and assemble results ───────────────────────────
+    mean_logit_corrupt = sum(all_corrupt) / len(all_corrupt)
+    keys = list(all_cells[0].keys())
     results: list[PatchResult] = []
 
-    for l_start in range(0, n_layers, window_size):
-        l_end = min(l_start + window_size, n_layers)
-
-        for group_name, idx in groups.items():
-            logit_vec = run_patched_forward(
-                hm.model,
-                corrupt_emb,
-                clean_cap.residual,  # (n_layers, S, H) on CPU
-                l_start,
-                l_end,
-                idx,
-                prompt_last,
-            )
-            logit_patched = float(logit_vec[answer_id])
-            score = normalized_restoration(logit_patched, logit_corrupt, logit_clean)
-
-            results.append(PatchResult(
-                record_id=record.id,
-                source=record.source,
-                layer_start=l_start,
-                layer_end=l_end,
-                token_group=group_name,
-                score=score,
-                logit_clean=logit_clean,
-                logit_corrupt=logit_corrupt,
-                logit_patched=logit_patched,
-            ))
+    for key in keys:
+        l_start, l_end, group_name = key
+        scores    = [c[key][0] for c in all_cells]
+        lp_values = [c[key][1] for c in all_cells]
+        results.append(PatchResult(
+            record_id=record.id,
+            source=record.source,
+            layer_start=l_start,
+            layer_end=l_end,
+            token_group=group_name,
+            score=sum(scores) / len(scores),
+            logit_clean=logit_clean,
+            logit_corrupt=mean_logit_corrupt,
+            logit_patched=sum(lp_values) / len(lp_values),
+            n_seeds=effective_seeds,
+        ))
 
     return results
 
@@ -155,11 +201,12 @@ def sweep_record(
 def sweep_windows(
     hm: VLMHookManager,
     records: Sequence[ProbeRecord],
+    sigma: float,
     window_size: int = 4,
-    sigma: float = 0.1,
+    n_seeds: int = 1,
 ) -> list[PatchResult]:
     """Run sweep_record over every record; return concatenated results.
 
     records must have answer_token_id filled (call resolve_answer_token_ids first).
     """
-    return [row for rec in records for row in sweep_record(hm, rec, window_size, sigma)]
+    return [row for rec in records for row in sweep_record(hm, rec, sigma, window_size, n_seeds)]
