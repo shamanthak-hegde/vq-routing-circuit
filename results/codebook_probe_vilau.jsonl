@@ -1,0 +1,80 @@
+{"test": "A_vq_sensitivity", "record_id": "pope_1544", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7119, "dominant_noisy_code": 61, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1544", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.6943, "dominant_noisy_code": 784, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1544", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7051, "dominant_noisy_code": 61, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_1544", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3876, "cos_sim_noisy_to_nearest_other": 0.9332, "nearest_other_record_id": "pope_1547", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2462", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.75, "dominant_noisy_code": 4120, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2462", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7383, "dominant_noisy_code": 11517, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2462", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7471, "dominant_noisy_code": 7073, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2462", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.4006, "cos_sim_noisy_to_nearest_other": 0.8705, "nearest_other_record_id": "pope_2113", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2338", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7744, "dominant_noisy_code": 11621, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2338", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7881, "dominant_noisy_code": 11621, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2338", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7764, "dominant_noisy_code": 11621, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2338", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.369, "cos_sim_noisy_to_nearest_other": 0.7768, "nearest_other_record_id": "pope_2476", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_1386", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.834, "dominant_noisy_code": 9182, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1386", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8418, "dominant_noisy_code": 9182, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1386", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.8223, "dominant_noisy_code": 9182, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_1386", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3785, "cos_sim_noisy_to_nearest_other": 0.8049, "nearest_other_record_id": "pope_665", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2676", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8154, "dominant_noisy_code": 3633, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2676", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8115, "dominant_noisy_code": 9058, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2676", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7891, "dominant_noisy_code": 5254, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2676", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3545, "cos_sim_noisy_to_nearest_other": 0.9412, "nearest_other_record_id": "pope_2673", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2424", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8105, "dominant_noisy_code": 13489, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2424", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8047, "dominant_noisy_code": 13489, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2424", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.8242, "dominant_noisy_code": 13489, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2424", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3889, "cos_sim_noisy_to_nearest_other": 0.9438, "nearest_other_record_id": "pope_2421", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_833", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.6953, "dominant_noisy_code": 7530, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_833", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7207, "dominant_noisy_code": 7530, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_833", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7139, "dominant_noisy_code": 7530, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_833", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3936, "cos_sim_noisy_to_nearest_other": 0.9325, "nearest_other_record_id": "pope_832", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_675", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7598, "dominant_noisy_code": 11517, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_675", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7686, "dominant_noisy_code": 15082, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_675", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7773, "dominant_noisy_code": 6987, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_675", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.4275, "cos_sim_noisy_to_nearest_other": 0.8077, "nearest_other_record_id": "pope_2144", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_901", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8984, "dominant_noisy_code": 2309, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_901", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8828, "dominant_noisy_code": 16179, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_901", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.8984, "dominant_noisy_code": 16179, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_901", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3582, "cos_sim_noisy_to_nearest_other": 0.9436, "nearest_other_record_id": "pope_906", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_906", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8984, "dominant_noisy_code": 2309, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_906", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8828, "dominant_noisy_code": 16179, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_906", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.8984, "dominant_noisy_code": 16179, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_906", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3582, "cos_sim_noisy_to_nearest_other": 0.9436, "nearest_other_record_id": "pope_901", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2163", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7324, "dominant_noisy_code": 3633, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2163", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7109, "dominant_noisy_code": 3633, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2163", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7012, "dominant_noisy_code": 4707, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2163", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3787, "cos_sim_noisy_to_nearest_other": 0.9306, "nearest_other_record_id": "pope_2166", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_1663", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.792, "dominant_noisy_code": 15854, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1663", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7822, "dominant_noisy_code": 15854, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1663", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7891, "dominant_noisy_code": 15854, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_1663", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3807, "cos_sim_noisy_to_nearest_other": 0.8011, "nearest_other_record_id": "pope_1241", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_1241", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7461, "dominant_noisy_code": 10512, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1241", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7422, "dominant_noisy_code": 10512, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1241", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7236, "dominant_noisy_code": 10512, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_1241", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3721, "cos_sim_noisy_to_nearest_other": 0.8313, "nearest_other_record_id": "pope_1287", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_688", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.6953, "dominant_noisy_code": 13204, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_688", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7178, "dominant_noisy_code": 3912, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_688", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7471, "dominant_noisy_code": 8144, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_688", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3857, "cos_sim_noisy_to_nearest_other": 0.8189, "nearest_other_record_id": "pope_951", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2444", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8223, "dominant_noisy_code": 3651, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2444", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8076, "dominant_noisy_code": 3651, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2444", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.833, "dominant_noisy_code": 3651, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2444", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3915, "cos_sim_noisy_to_nearest_other": 0.8188, "nearest_other_record_id": "pope_2462", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_1287", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7393, "dominant_noisy_code": 11009, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1287", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.707, "dominant_noisy_code": 11009, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_1287", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7217, "dominant_noisy_code": 11009, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_1287", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3731, "cos_sim_noisy_to_nearest_other": 0.8315, "nearest_other_record_id": "pope_1241", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_709", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8115, "dominant_noisy_code": 10512, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_709", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.8105, "dominant_noisy_code": 10512, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_709", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.8018, "dominant_noisy_code": 10512, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_709", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3816, "cos_sim_noisy_to_nearest_other": 0.8331, "nearest_other_record_id": "pope_1997", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_767", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.7461, "dominant_noisy_code": 11009, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_767", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7354, "dominant_noisy_code": 11009, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_767", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7393, "dominant_noisy_code": 10243, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_767", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.406, "cos_sim_noisy_to_nearest_other": 0.8178, "nearest_other_record_id": "pope_229", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_410", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.8086, "dominant_noisy_code": 6440, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_410", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.7998, "dominant_noisy_code": 2699, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_410", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.8164, "dominant_noisy_code": 6440, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_410", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.395, "cos_sim_noisy_to_nearest_other": 0.9326, "nearest_other_record_id": "pope_411", "noisy_closer_to_other": true}
+{"test": "A_vq_sensitivity", "record_id": "pope_2915", "noise_seed": 0, "sigma_img": 0.05, "frac_codes_changed": 0.6777, "dominant_noisy_code": 13489, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2915", "noise_seed": 1, "sigma_img": 0.05, "frac_codes_changed": 0.6777, "dominant_noisy_code": 13489, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "A_vq_sensitivity", "record_id": "pope_2915", "noise_seed": 2, "sigma_img": 0.05, "frac_codes_changed": 0.7012, "dominant_noisy_code": 8520, "n_spatial_tokens": 256, "rq_depth": 4}
+{"test": "B_off_manifold", "record_id": "pope_2915", "sigma": 1.0, "cos_sim_noisy_to_clean_self": 0.3911, "cos_sim_noisy_to_nearest_other": 0.8399, "nearest_other_record_id": "pope_79", "noisy_closer_to_other": true}

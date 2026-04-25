@@ -71,13 +71,35 @@ def load_results(paths: list[str]) -> pd.DataFrame:
     return df
 
 
+def apply_correct_filter(df: pd.DataFrame, accuracy_path: str) -> pd.DataFrame:
+    """Mark records as warn=True where clean-run top-1 prediction was wrong.
+
+    Loads results/accuracy_*.jsonl (produced by run_accuracy.py) and excludes
+    any record_id where correct=False from the usable slice.  All downstream
+    code uses ~df.warn so no other changes are needed.
+    """
+    correct_ids: set[str] = set()
+    with open(accuracy_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("correct"):
+                correct_ids.add(row["record_id"])
+    df = df.copy()
+    df.loc[~df["record_id"].isin(correct_ids), "warn"] = True
+    return df
+
+
 # ── summary ───────────────────────────────────────────────────────────────────
 
-def print_summary(df: pd.DataFrame) -> None:
+def print_summary(df: pd.DataFrame, correct_filter: bool = False) -> None:
     n_records = df.record_id.nunique()
     n_warn    = df[df.warn].record_id.nunique()
+    label = "Results summary (WARN + wrong-baseline excluded)" if correct_filter else "Results summary"
     print(f"\n{'='*60}")
-    print(f"  Results summary")
+    print(f"  {label}")
     print(f"{'='*60}")
     print(f"  Total records   : {n_records}")
     print(f"  WARN (excluded) : {n_warn}  ({100*n_warn/n_records:.1f}%)")
@@ -396,6 +418,15 @@ def main() -> None:
     parser.add_argument("--vilau", nargs="+",
                         help="VILA-U result files (compare mode)")
     parser.add_argument("--out_dir", default="figures")
+    parser.add_argument(
+        "--correct_filter", action="store_true",
+        help="Exclude records where the model's clean-run top-1 prediction was wrong. "
+             "Requires --accuracy (single mode) or --llava_acc/--vila_acc/--vilau_acc (compare mode).",
+    )
+    parser.add_argument("--accuracy",    default=None, help="Accuracy JSONL for single mode")
+    parser.add_argument("--llava_acc",   default=None, help="LLaVA accuracy JSONL (compare mode)")
+    parser.add_argument("--vila_acc",    default=None, help="VILA accuracy JSONL (compare mode)")
+    parser.add_argument("--vilau_acc",   default=None, help="VILA-U accuracy JSONL (compare mode)")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -412,13 +443,22 @@ def main() -> None:
         if args.vila:
             print(f"Loading VILA: {args.vila}")
             vila_df = load_results(args.vila)
+
+        if args.correct_filter:
+            if args.llava_acc:
+                llava_df = apply_correct_filter(llava_df, args.llava_acc)
+            if args.vilau_acc:
+                vilau_df = apply_correct_filter(vilau_df, args.vilau_acc)
+            if vila_df is not None and args.vila_acc:
+                vila_df = apply_correct_filter(vila_df, args.vila_acc)
+
         print("\n--- LLaVA ---")
-        print_summary(llava_df)
+        print_summary(llava_df, args.correct_filter)
         if vila_df is not None:
             print("--- VILA ---")
-            print_summary(vila_df)
+            print_summary(vila_df, args.correct_filter)
         print("--- VILA-U ---")
-        print_summary(vilau_df)
+        print_summary(vilau_df, args.correct_filter)
         print("Generating cross-model figures ...")
         plot_cross_model(llava_df, vilau_df, out_dir, vila_df=vila_df)
         print("\nDone.")
@@ -427,7 +467,12 @@ def main() -> None:
     print(f"Loading {args.results} ...")
     df = load_results(args.results)
 
-    print_summary(df)
+    if args.correct_filter:
+        if not args.accuracy:
+            parser.error("--correct_filter requires --accuracy in single mode")
+        df = apply_correct_filter(df, args.accuracy)
+
+    print_summary(df, args.correct_filter)
     print_score_stats(df)
 
     print("Generating figures ...")
