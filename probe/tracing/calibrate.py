@@ -153,8 +153,8 @@ def _main():
     print(f"  {'-'*10}   {'-'*12}")
     for sigma, cs in results:
         marker = "  <-- recommended" if sigma == best_sigma else ""
-        if sigma == 0.1:
-            marker += "  (current default)" if not marker.strip() else " / current default"
+        if sigma == 0.5:
+            marker += "  (calibrated default)" if not marker.strip() else " / calibrated default"
         print(f"  {sigma:>10.4f}   {cs:>12.4f}{marker}")
 
     print(f"\nRecommended sigma = {best_sigma} (mean cos-sim = {dict(results)[best_sigma]:.4f})")

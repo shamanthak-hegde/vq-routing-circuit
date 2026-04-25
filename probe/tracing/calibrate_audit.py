@@ -372,7 +372,7 @@ def _main() -> None:
     parser.add_argument(
         "--sigmas", default=None,
         help="Comma-separated σ values (3 recommended). "
-             "Defaults: llava=0.05,0.1,0.2 | vila=0.25,0.5,1.0 | vilau=0.5,1.0,2.0",
+             "Defaults: llava=0.25,0.5,1.0 | vila=0.25,0.5,1.0 | vilau=0.5,1.0,2.0",
     )
     parser.add_argument("--n_samples", type=int, default=50)
     parser.add_argument(
