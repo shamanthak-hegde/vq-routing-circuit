@@ -5,3 +5,4 @@ probe/__pycache__/
 .codex
 .vscode/
 __pycache__/
+START_SESSION_PROMPT.md
