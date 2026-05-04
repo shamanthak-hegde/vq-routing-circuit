@@ -199,12 +199,25 @@ def plot_cross_model(
     vilau_df: pd.DataFrame,
     out_dir: Path,
     vila_df: pd.DataFrame | None = None,
+    qwen_df: pd.DataFrame | None = None,
+    haplo_df: pd.DataFrame | None = None,
+    emu3_df: pd.DataFrame | None = None,
 ) -> None:
     """Per source: comparison heatmaps across models.
 
-    2-model (vila_df=None): 3-panel [LLaVA | VILA-U | Δ(LLaVA−VILA-U)]
-    3-model:                5-panel [LLaVA | VILA | VILA-U | Δ(VILA−LLaVA) | Δ(VILA-U−LLaVA)]
+    2-model:                         3-panel [LLaVA | VILA-U | Δ(LLaVA−VILA-U)]
+    3-model (vila):                  5-panel [LLaVA | VILA | VILA-U | Δ(VILA−LLaVA) | Δ(VILA-U−LLaVA)]
+    4-model (vila+qwen):             6-panel [LLaVA | VILA | Qwen | VILA-U | Δ(VILA-U−LLaVA) | Δ(Qwen−LLaVA)]
+    5-model (vila+qwen+haplo|emu3):  7-panel [LLaVA | VILA | Qwen | {Haplo|Emu3} | VILA-U | Δ(VILA-U−LLaVA) | Δ({Haplo|Emu3}−LLaVA)]
     """
+    # emu3_df fills the haplo slot when haplo_df is absent
+    if haplo_df is None and emu3_df is not None:
+        haplo_df = emu3_df
+        _haplo_label = "Emu3"
+        _delta_label = "Δ  (Emu3 − LLaVA)"
+    else:
+        _haplo_label = "HaploOmni"
+        _delta_label = "Δ  (HaploOmni − LLaVA)"
     l_clean = llava_df[~llava_df.warn]
     vu_clean = vilau_df[~vilau_df.warn]
     sources = sorted(set(l_clean["source"].unique()) & set(vu_clean["source"].unique()))
@@ -213,6 +226,8 @@ def plot_cross_model(
         return
 
     vi_clean = vila_df[~vila_df.warn] if vila_df is not None else None
+    q_clean  = qwen_df[~qwen_df.warn] if qwen_df is not None else None
+    h_clean  = haplo_df[~haplo_df.warn] if haplo_df is not None else None
 
     for src in sources:
         l_g  = l_clean[l_clean["source"] == src]
@@ -228,12 +243,49 @@ def plot_cross_model(
             common_rows = common_rows.intersection(vi_piv.index)
             vi_piv = vi_piv.reindex(index=common_rows, columns=_GROUP_ORDER)
 
+        if q_clean is not None:
+            q_g   = q_clean[q_clean["source"] == src]
+            q_piv = _pivot(q_g)
+            common_rows = common_rows.intersection(q_piv.index)
+            q_piv = q_piv.reindex(index=common_rows, columns=_GROUP_ORDER)
+
+        if h_clean is not None:
+            h_g   = h_clean[h_clean["source"] == src]
+            h_piv = _pivot(h_g)
+            common_rows = common_rows.intersection(h_piv.index)
+            h_piv = h_piv.reindex(index=common_rows, columns=_GROUP_ORDER)
+
         l_piv  = l_piv.reindex(index=common_rows, columns=_GROUP_ORDER)
         vu_piv = vu_piv.reindex(index=common_rows, columns=_GROUP_ORDER)
 
-        if vi_clean is not None:
-            d_vi_piv  = vi_piv  - l_piv   # VILA  − LLaVA
-            d_vu_piv  = vu_piv  - l_piv   # VILA-U − LLaVA
+        if vi_clean is not None and q_clean is not None and h_clean is not None:
+            # 5-model: LLaVA | VILA | Qwen | {Haplo|Emu3} | VILA-U | Δ(VILA-U−LLaVA) | Δ({Haplo|Emu3}−LLaVA)
+            d_vu_piv = vu_piv - l_piv
+            d_h_piv  = h_piv  - l_piv
+            fig, axes = plt.subplots(1, 7, figsize=(38, 5))
+            _draw_heatmap(axes[0], l_piv,  f"LLaVA-1.6 — {src}",         l_g.record_id.nunique())
+            _draw_heatmap(axes[1], vi_piv, f"VILA v1.0 — {src}",         vi_g.record_id.nunique())
+            _draw_heatmap(axes[2], q_piv,  f"Qwen2.5-VL — {src}",        q_g.record_id.nunique())
+            _draw_heatmap(axes[3], h_piv,  f"{_haplo_label} — {src}",    h_g.record_id.nunique())
+            _draw_heatmap(axes[4], vu_piv, f"VILA-U — {src}",            vu_g.record_id.nunique())
+            _draw_diff_heatmap(axes[5], d_vu_piv, "Δ  (VILA-U − LLaVA)")
+            _draw_diff_heatmap(axes[6], d_h_piv,  _delta_label)
+            fig.suptitle(f"5-model causal restoration — {src}", fontsize=13)
+        elif vi_clean is not None and q_clean is not None:
+            # 4-model: LLaVA | VILA | Qwen | VILA-U | Δ(VILA-U−LLaVA) | Δ(Qwen−LLaVA)
+            d_vu_piv = vu_piv - l_piv
+            d_q_piv  = q_piv  - l_piv
+            fig, axes = plt.subplots(1, 6, figsize=(33, 5))
+            _draw_heatmap(axes[0], l_piv,  f"LLaVA-1.6 — {src}",    l_g.record_id.nunique())
+            _draw_heatmap(axes[1], vi_piv, f"VILA v1.0 — {src}",    vi_g.record_id.nunique())
+            _draw_heatmap(axes[2], q_piv,  f"Qwen2.5-VL — {src}",   q_g.record_id.nunique())
+            _draw_heatmap(axes[3], vu_piv, f"VILA-U — {src}",       vu_g.record_id.nunique())
+            _draw_diff_heatmap(axes[4], d_vu_piv, "Δ  (VILA-U − LLaVA)")
+            _draw_diff_heatmap(axes[5], d_q_piv,  "Δ  (Qwen − LLaVA)")
+            fig.suptitle(f"4-model causal restoration — {src}", fontsize=13)
+        elif vi_clean is not None:
+            d_vi_piv  = vi_piv  - l_piv
+            d_vu_piv  = vu_piv  - l_piv
             fig, axes = plt.subplots(1, 5, figsize=(27, 5))
             _draw_heatmap(axes[0], l_piv,  f"LLaVA-1.6 — {src}",  l_g.record_id.nunique())
             _draw_heatmap(axes[1], vi_piv, f"VILA v1.0 — {src}",  vi_g.record_id.nunique())
@@ -417,6 +469,12 @@ def main() -> None:
                         help="VILA v1.0 result files (optional 3rd model in compare mode)")
     parser.add_argument("--vilau", nargs="+",
                         help="VILA-U result files (compare mode)")
+    parser.add_argument("--qwen", nargs="+",
+                        help="Qwen2.5-VL result files (optional 4th model in compare mode)")
+    parser.add_argument("--haplo", nargs="+",
+                        help="HaploOmni result files (optional 5th model in compare mode)")
+    parser.add_argument("--emu3", nargs="+",
+                        help="Emu3 result files (optional; fills haplo slot when haplo absent)")
     parser.add_argument("--out_dir", default="figures")
     parser.add_argument(
         "--correct_filter", action="store_true",
@@ -427,6 +485,7 @@ def main() -> None:
     parser.add_argument("--llava_acc",   default=None, help="LLaVA accuracy JSONL (compare mode)")
     parser.add_argument("--vila_acc",    default=None, help="VILA accuracy JSONL (compare mode)")
     parser.add_argument("--vilau_acc",   default=None, help="VILA-U accuracy JSONL (compare mode)")
+    parser.add_argument("--emu3_acc",    default=None, help="Emu3 accuracy JSONL (compare mode)")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -443,6 +502,18 @@ def main() -> None:
         if args.vila:
             print(f"Loading VILA: {args.vila}")
             vila_df = load_results(args.vila)
+        qwen_df = None
+        if args.qwen:
+            print(f"Loading Qwen2.5-VL: {args.qwen}")
+            qwen_df = load_results(args.qwen)
+        haplo_df = None
+        if args.haplo:
+            print(f"Loading HaploOmni: {args.haplo}")
+            haplo_df = load_results(args.haplo)
+        emu3_df = None
+        if args.emu3:
+            print(f"Loading Emu3: {args.emu3}")
+            emu3_df = load_results(args.emu3)
 
         if args.correct_filter:
             if args.llava_acc:
@@ -457,10 +528,19 @@ def main() -> None:
         if vila_df is not None:
             print("--- VILA ---")
             print_summary(vila_df, args.correct_filter)
+        if qwen_df is not None:
+            print("--- Qwen2.5-VL ---")
+            print_summary(qwen_df, args.correct_filter)
+        if haplo_df is not None:
+            print("--- HaploOmni ---")
+            print_summary(haplo_df, args.correct_filter)
+        if emu3_df is not None:
+            print("--- Emu3 ---")
+            print_summary(emu3_df, args.correct_filter)
         print("--- VILA-U ---")
         print_summary(vilau_df, args.correct_filter)
         print("Generating cross-model figures ...")
-        plot_cross_model(llava_df, vilau_df, out_dir, vila_df=vila_df)
+        plot_cross_model(llava_df, vilau_df, out_dir, vila_df=vila_df, qwen_df=qwen_df, haplo_df=haplo_df, emu3_df=emu3_df)
         print("\nDone.")
         return
 

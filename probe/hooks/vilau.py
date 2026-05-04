@@ -220,6 +220,31 @@ class VilaUHookManager(VLMHookManager):
             **kwargs,
         )
 
+    # ── VQ codes ──────────────────────────────────────────────────────────────
+
+    def _get_vq_codes(self, image: Image.Image):
+        """Return RQ-VAE code indices from VILA-U's RQVAE-SigLIP vision tower.
+
+        Returns one level per RQ depth slot (shape: h*w,) as int64 CPU tensors.
+        """
+        img = image.convert("RGB")
+        images_tensor = self._process_images(
+            [img], self.image_processor, self.model.config
+        ).to(self._model_device, dtype=self._model_dtype)
+
+        vision_tower = self.model.vision_tower.vision_tower.rqvaesiglip
+        codes, _ = vision_tower.encode_image(images_tensor)  # (1, h, w, d)
+        d = codes.shape[3]
+
+        quantizer = vision_tower.quantizer
+        cb_size = getattr(quantizer, "codebook_size", None)
+        if cb_size is None:
+            cb_size = int(codes.max().item()) + 1
+        codebook_sizes = [int(cb_size)] * d
+
+        levels = [codes[0, :, :, i].reshape(-1).cpu() for i in range(d)]
+        return {"levels": levels, "codebook_sizes": codebook_sizes}
+
     # ── ASSISTANT tag detection ───────────────────────────────────────────────
 
     def _compute_asst_suffix_len(self, tokenizer, conv_mode: str) -> int:

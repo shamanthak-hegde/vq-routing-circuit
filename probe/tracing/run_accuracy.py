@@ -188,7 +188,7 @@ def print_report(rows: list[dict], warn_flags: dict[str, bool]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Clean-run accuracy sweep")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "vilau", "vila"])
+                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "lavit"])
     parser.add_argument("--model_path", default=None)
     parser.add_argument("--sweep_results", default=None,
                         help="Existing sweep JSONL for WARN cross-tabulation")
@@ -199,6 +199,22 @@ def main() -> None:
                         choices=["all", "naturalbench", "pope"])
     parser.add_argument("--report_only", action="store_true",
                         help="Skip forward passes; just print report from --out")
+    # N-040A/C: optional intervention applied around every run_prefill call
+    parser.add_argument(
+        "--knockout_mode",
+        choices=["pathological_route_ablation", "full_zero", "selective", "scalar", "selective_scalar"],
+        default=None,
+        help="If set, apply the named L0 intervention from head_knockout.py (full_zero is deprecated alias for pathological_route_ablation)",
+    )
+    parser.add_argument("--knockout_layer", type=int, default=0)
+    parser.add_argument(
+        "--heads", default="6,7,14",
+        help="Comma-separated head indices (selective / selective_scalar modes)",
+    )
+    parser.add_argument("--alpha", type=float, default=0.5,
+                        help="Scale factor (scalar / selective_scalar modes)")
+    parser.add_argument("--tokenizer_path", default=None,
+                        help="[unitok only] path to unitok_tokenizer.pth")
     args = parser.parse_args()
 
     out_path = Path(args.out)
@@ -251,6 +267,69 @@ def main() -> None:
         )
         model.eval()
         hm = VilaUHookManager(model, tokenizer, image_processor)
+    elif args.backend == "unitok":
+        import torch
+        _unitok = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "UniTok"))
+        _liquid = os.path.join(_unitok, "eval", "liquid")
+        for p in (_unitok, _liquid):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        from model.builder import load_pretrained_model as _unitok_load
+        from mm_utils import get_model_name_from_path as _unitok_name
+        from models.unitok import UniTok
+        from utils.config import Args as UniTokArgs
+        from probe.hooks.unitok import UniTokHookManager
+        if not args.tokenizer_path:
+            parser.error("--tokenizer_path is required for --backend unitok")
+        model_name = _unitok_name(args.model_path)
+        tokenizer, model, _, _ = _unitok_load(
+            args.model_path, None, model_name, attn_implementation="eager",
+        )
+        model.eval()
+        device = next(model.parameters()).device
+        ckpt = torch.load(os.path.expanduser(args.tokenizer_path), map_location="cpu")
+        vae_cfg = UniTokArgs()
+        vae_cfg.load_state_dict(ckpt["args"])
+        vq_model = UniTok(vae_cfg)
+        vq_model.load_state_dict(ckpt["trainer"]["unitok"])
+        vq_model.to(device).eval()
+        del ckpt
+        hm = UniTokHookManager(model, tokenizer, vq_model)
+    elif args.backend == "qwen3vl":
+        from probe.hooks.qwen3vl import Qwen3VLHookManager
+        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+        processor = AutoProcessor.from_pretrained(
+            args.model_path, trust_remote_code=True, padding_side="left", use_fast=True
+        )
+        processor.image_processor.max_pixels = 720 * 1280
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            args.model_path,
+            trust_remote_code=True,
+            torch_dtype="auto",
+            attn_implementation="eager",
+            device_map="auto",
+        )
+        model.eval()
+        hm = Qwen3VLHookManager(model, processor)
+        tokenizer = processor.tokenizer
+    elif args.backend == "lavit":
+        _lavit = os.path.join(os.path.dirname(__file__), "..", "..", "LaVIT")
+        if _lavit not in sys.path:
+            sys.path.insert(0, _lavit)
+        from models import build_model
+        from probe.hooks.lavit import LavitHookManager
+        model = build_model(
+            model_path=args.model_path,
+            model_dtype="bf16",
+            device_id=0,
+            use_xformers=False,
+            understanding=True,
+            local_files_only=True,
+        )
+        model = model.to("cuda")
+        model.eval()
+        hm = LavitHookManager(model)
+        tokenizer = model.llama_tokenizer
     else:  # vila
         _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
         if _vila not in sys.path:
@@ -264,6 +343,23 @@ def main() -> None:
         )
         model.eval()
         hm = VilaHookManager(model, tokenizer, image_processor)
+
+    # ── build optional intervention ───────────────────────────────────────────
+    intervention = None
+    if args.knockout_mode is not None:
+        from probe.tracing.head_knockout import build_intervention, _parse_heads
+        intervention = build_intervention(
+            args.knockout_mode,
+            hm,
+            args.knockout_layer,
+            _parse_heads(args.heads),
+            args.alpha,
+        )
+        print(
+            f"Intervention: mode={args.knockout_mode}, layer={args.knockout_layer}"
+            + (f", heads={args.heads}" if args.knockout_mode in ("selective", "selective_scalar") else "")
+            + (f", alpha={args.alpha}" if args.knockout_mode in ("scalar", "selective_scalar") else "")
+        )
 
     # ── load probe records ────────────────────────────────────────────────────
     import torch
@@ -299,7 +395,11 @@ def main() -> None:
         for i, rec in enumerate(todo, 1):
             t0 = time.time()
             img = Image.open(rec.image_path).convert("RGB")
-            cap = hm.run_prefill(img, rec.question)
+            if intervention is not None:
+                with intervention:
+                    cap = hm.run_prefill(img, rec.question)
+            else:
+                cap = hm.run_prefill(img, rec.question)
 
             # logits at the last prompt position: (vocab,)
             last_logits = cap.logits[cap.token_index.prompt_last].float()

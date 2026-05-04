@@ -144,7 +144,7 @@ class VLMHookManager(ABC):
             self._get_lm_forward()(
                 inputs_embeds=inputs_embeds,
                 use_cache=False,
-                output_attentions=False,
+                output_attentions=self.capture_attention_weights,
                 return_dict=True,
             )
         finally:
@@ -328,6 +328,35 @@ class VLMHookManager(ABC):
         answer_start = prompt_len if n_generated > 0 else None
 
         return categories, visual_range, question_range, answer_start
+
+    def visual_range(
+        self, input_ids: torch.Tensor, n_image_tokens: int
+    ) -> tuple[int, int]:
+        """Return (vlo, vhi) — the visual-token slice in inputs_embeds.
+
+        Default handles LLaVA-family models where a single -200 sentinel is
+        expanded to n_image_tokens contiguous positions.
+        Override for models without a -200 sentinel (e.g. Qwen3VLHookManager).
+        """
+        ids_1d = input_ids[0]
+        sentinel_pos = int(
+            (ids_1d == -200).nonzero(as_tuple=False)[0, 0].item()
+        )
+        return (sentinel_pos, sentinel_pos + n_image_tokens)
+
+    # ── VQ-specific hook (override in VQ subclasses) ─────────────────────────
+
+    def _get_vq_codes(self, image: Image.Image):
+        """Return VQ code information for a PIL image, or None for non-VQ backends.
+
+        Returns
+        -------
+        dict with:
+          'levels'         — list of 1-D int64 CPU tensors, one per codebook level
+          'codebook_sizes' — list of ints, one per level
+        or None if the backend does not use a discrete VQ tokenizer.
+        """
+        return None
 
     # ── Helpers (may be overridden) ───────────────────────────────────────────
 

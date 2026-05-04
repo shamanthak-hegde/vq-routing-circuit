@@ -157,10 +157,16 @@ def finalize_store(store: dict) -> dict[str, Tensor]:
 
     out: dict[str, Tensor] = {}
 
-    # projector: list of one tensor per projector call
-    assert len(store["projector"]) == 1, (
-        f"Expected exactly 1 projector call, got {len(store['projector'])}"
-    )
+    # projector: normally fires once (prefill only). Some models (e.g. HaploOmni)
+    # re-run the projector on each decode step; we take the first call (prefill).
+    assert len(store["projector"]) >= 1, "Expected at least 1 projector call, got 0"
+    if len(store["projector"]) > 1:
+        import warnings
+        warnings.warn(
+            f"finalize_store: projector fired {len(store['projector'])} times; "
+            "using first call (prefill). This is expected for HaploOmni.",
+            stacklevel=2,
+        )
     out["projected_visual"] = store["projector"][0]  # (crops, patches, H)
 
     out["attn_out"] = _cat_calls(store["attn_out"])
