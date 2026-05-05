@@ -82,12 +82,13 @@ def _main():
 
     parser = argparse.ArgumentParser(description="Calibrate sigma for POPE gaussian_noise")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit"],
+                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "showo", "seed"],
                         help="Model backend (default: llava)")
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
     parser.add_argument("--vq_path", default=None,
-                        help="[emu3 only] Path or HF hub ID of Emu3-VisionTokenizer")
+                        help="[emu3/showo only] Path or HF hub ID of VQ tokenizer "
+                             "(Emu3-VisionTokenizer or showlab/magvitv2)")
     parser.add_argument("--max_image_size", type=int, default=256,
                         help="[emu3 only] Cap image dimensions before VQ-encoding (default 256→1024 tokens)")
     parser.add_argument("--model_path", required=True)
@@ -231,6 +232,63 @@ def _main():
         model = model.to("cuda")
         model.eval()
         hm = LavitHookManager(model)
+    elif args.backend == "seed":
+        _seed = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "SEED")
+        )
+        if _seed not in sys.path:
+            sys.path.insert(0, _seed)
+        from models.model_tools import get_pretrained_llama_causal_model
+        from models.seed_llama_tokenizer import SeedLlamaTokenizer
+        from probe.hooks.seed import SeedHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _tok_path = args.tokenizer_path if args.tokenizer_path else "AILab-CVC/seed-tokenizer-2"
+        if os.path.isdir(_tok_path):
+            _encoder_path = os.path.join(_tok_path, "seed_quantizer.pt")
+        else:
+            from huggingface_hub import hf_hub_download
+            _encoder_path = hf_hub_download(repo_id=_tok_path, filename="seed_quantizer.pt")
+        tokenizer = SeedLlamaTokenizer.from_pretrained(
+            _tok_path,
+            fp16=True,
+            load_diffusion=False,
+            encoder_url=_encoder_path,
+            device=str(device),
+        )
+        model = get_pretrained_llama_causal_model(
+            pretrained_model_name_or_path=args.model_path,
+            torch_dtype="fp16",
+            low_cpu_mem_usage=True,
+        )
+        model = model.eval().to(device)
+        hm = SeedHookManager(model, tokenizer)
+    elif args.backend == "showo":
+        _showo = os.path.join(os.path.dirname(__file__), "..", "..", "Show-o")
+        if _showo not in sys.path:
+            sys.path.insert(0, _showo)
+        if args.vq_path is None:
+            raise ValueError("--vq_path is required for --backend showo (e.g. showlab/magvitv2)")
+        from models import Showo, MAGVITv2
+        from training.prompting_utils import UniversalPrompting
+        from transformers import AutoTokenizer
+        from probe.hooks.showo import ShowoHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        # Tokenizer is the Phi-1.5 backbone tokenizer, not the Show-o checkpoint itself.
+        _phi_tok_path = args.tokenizer_path if args.tokenizer_path else "microsoft/phi-1_5"
+        tokenizer = AutoTokenizer.from_pretrained(_phi_tok_path, padding_side="left")
+        uni_prompting = UniversalPrompting(
+            tokenizer,
+            special_tokens=(
+                "<|soi|>", "<|eoi|>", "<|sov|>", "<|eov|>",
+                "<|t2i|>", "<|mmu|>", "<|t2v|>", "<|v2v|>", "<|lvg|>",
+            ),
+            ignore_id=-100,
+            cond_dropout_prob=0.0,
+        )
+        vq_model = MAGVITv2.from_pretrained(args.vq_path).to(device).eval()
+        vq_model.requires_grad_(False)
+        model = Showo.from_pretrained(args.model_path).to(device).eval()
+        hm = ShowoHookManager(model, tokenizer, vq_model, uni_prompting, resolution=256)
     else:  # vila
         _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
         if _vila not in sys.path:

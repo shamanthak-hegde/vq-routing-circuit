@@ -109,7 +109,7 @@ def _print_heatmap(out_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Full probe-set patching sweep")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit"],
+                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "seed"],
                         help="Model backend (default: llava)")
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
@@ -272,6 +272,37 @@ def main() -> None:
         model.eval()
         hm = LavitHookManager(model)
         tokenizer = model.llama_tokenizer
+    elif args.backend == "seed":
+        import torch
+        _seed = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "SEED")
+        )
+        if _seed not in sys.path:
+            sys.path.insert(0, _seed)
+        from models.model_tools import get_pretrained_llama_causal_model
+        from models.seed_llama_tokenizer import SeedLlamaTokenizer
+        from probe.hooks.seed import SeedHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _tok_path = args.tokenizer_path if args.tokenizer_path else "AILab-CVC/seed-tokenizer-2"
+        if os.path.isdir(_tok_path):
+            _encoder_path = os.path.join(_tok_path, "seed_quantizer.pt")
+        else:
+            from huggingface_hub import hf_hub_download
+            _encoder_path = hf_hub_download(repo_id=_tok_path, filename="seed_quantizer.pt")
+        tokenizer = SeedLlamaTokenizer.from_pretrained(
+            _tok_path,
+            fp16=True,
+            load_diffusion=False,
+            encoder_url=_encoder_path,
+            device=str(device),
+        )
+        model = get_pretrained_llama_causal_model(
+            pretrained_model_name_or_path=args.model_path,
+            torch_dtype="fp16",
+            low_cpu_mem_usage=True,
+        )
+        model = model.eval().to(device)
+        hm = SeedHookManager(model, tokenizer)
     else:  # vila
         _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
         if _vila not in sys.path:
