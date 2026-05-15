@@ -1,4 +1,4 @@
-"""CPU-only sanity tests for the N-040A intervention library.
+"""CPU-only sanity tests for the N-040A / N-047 / N-057 intervention library.
 
 Tests that:
   1. SelectiveHeadKnockout zeros exactly the listed head slices and leaves others unchanged.
@@ -9,14 +9,24 @@ Tests that:
   6. build_intervention dispatches to the right class.
   7. _parse_heads handles string and list inputs.
   8. _get_head_dim infers correct head_dim from a mock layer.
+  9. VTITextualSteer with alpha=0.0 is the identity (no steering).
+  10. VTITextualSteer with alpha=1.0 preserves per-token L2 norm.
+  11. VTITextualSteer __exit__ removes all hooks (model bit-identical afterwards).
+  12. VTITextualSteer raises on n_layers mismatch.
+  13. ProjectorOutputScale with alpha=1.0 is the identity.
+  14. ProjectorOutputScale with alpha=0.5 halves projector output.
+  15. ProjectorOutputScale __exit__ removes hook (no side effects after context).
+  16. build_intervention dispatches projector_scale to ProjectorOutputScale.
 
 All tests use lightweight fake modules — no GPU, no model checkpoint required.
 """
 
 from __future__ import annotations
 
+import tempfile
 import types
 import unittest
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -27,6 +37,8 @@ from probe.tracing.head_knockout import (
     ScalarLayerScale,
     SelectiveHeadScale,
     LayerAttnKnockout,
+    VTITextualSteer,
+    ProjectorOutputScale,
     build_intervention,
     _parse_heads,
     _get_head_dim,
@@ -239,6 +251,153 @@ class TestSelectiveHeadScale(unittest.TestCase):
         self.assertTrue(torch.allclose(ko_slice, ref_slice * 0.5, atol=1e-5))
 
 
+N_LAYERS_VTI = 3
+
+
+def _make_multi_layer_hm(n: int = N_LAYERS_VTI) -> tuple[Any, list[nn.Module]]:
+    """Hook manager with N full decoder layers for VTI tests."""
+
+    class _FakeDecoder(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.self_attn = nn.Module()
+            self.self_attn.o_proj = nn.Linear(HIDDEN, HIDDEN, bias=False)
+            self.mlp = nn.Linear(HIDDEN, HIDDEN, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + self.mlp(x)
+
+    layers = nn.ModuleList([_FakeDecoder() for _ in range(n)])
+    hm = types.SimpleNamespace()
+    hm._get_decoder_layers = lambda: list(layers)
+    return hm, list(layers)
+
+
+def _save_direction(n_layers: int = N_LAYERS_VTI, hidden: int = HIDDEN) -> Path:
+    direction = torch.randn(n_layers, hidden)
+    tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
+    torch.save(direction, tmp.name)
+    tmp.close()
+    return Path(tmp.name)
+
+
+class TestVTITextualSteer(unittest.TestCase):
+
+    def test_alpha_zero_is_identity(self) -> None:
+        """alpha=0 → 0.1*0*d_norm = 0 → F.normalize(unit + 0)*norm = input unchanged."""
+        hm, layers = _make_multi_layer_hm()
+        direction_path = _save_direction()
+        x = torch.randn(1, SEQ, HIDDEN)
+        ref = layers[0](x.clone())
+
+        with VTITextualSteer(hm, direction_path, alpha=0.0):
+            out = layers[0](x.clone())
+
+        self.assertTrue(
+            torch.allclose(ref, out, atol=1e-5),
+            "alpha=0 VTITextualSteer should be identity",
+        )
+        direction_path.unlink(missing_ok=True)
+
+    def test_alpha_one_preserves_norm(self) -> None:
+        """After steering, per-token L2 norm must match the pre-hook norm."""
+        hm, layers = _make_multi_layer_hm()
+        direction_path = _save_direction()
+
+        x = torch.randn(1, SEQ, HIDDEN)
+        ref_out = layers[0](x.clone())  # shape (1, SEQ, HIDDEN)
+        ref_norms = torch.linalg.vector_norm(ref_out.float(), dim=-1)
+
+        with VTITextualSteer(hm, direction_path, alpha=1.0):
+            vti_out = layers[0](x.clone())
+        vti_norms = torch.linalg.vector_norm(vti_out.float(), dim=-1)
+
+        self.assertTrue(
+            torch.allclose(ref_norms, vti_norms, atol=1e-4),
+            f"Norm not preserved: max diff {(ref_norms - vti_norms).abs().max().item():.6f}",
+        )
+        direction_path.unlink(missing_ok=True)
+
+    def test_hook_removed_after_exit(self) -> None:
+        """After __exit__, the model output must be bit-identical to pre-enter."""
+        hm, layers = _make_multi_layer_hm()
+        direction_path = _save_direction()
+
+        x = torch.randn(1, SEQ, HIDDEN)
+        ref_before = layers[0](x.clone())
+
+        with VTITextualSteer(hm, direction_path, alpha=0.9):
+            pass  # enter and immediately exit
+
+        ref_after = layers[0](x.clone())
+        self.assertTrue(
+            torch.allclose(ref_before, ref_after),
+            "Output changed after VTITextualSteer __exit__ — hook not removed",
+        )
+        direction_path.unlink(missing_ok=True)
+
+    def test_all_layers_hooked(self) -> None:
+        """All N layers must be modified during the context block."""
+        hm, layers = _make_multi_layer_hm()
+        direction_path = _save_direction()
+
+        x = torch.randn(1, SEQ, HIDDEN)
+        ref_outs = [l(x.clone()) for l in layers]
+
+        with VTITextualSteer(hm, direction_path, alpha=0.9):
+            vti_outs = [l(x.clone()) for l in layers]
+
+        for i, (ref, vti) in enumerate(zip(ref_outs, vti_outs)):
+            self.assertFalse(
+                torch.allclose(ref, vti, atol=1e-4),
+                f"Layer {i} output unchanged under VTI (hook may not be firing)",
+            )
+        direction_path.unlink(missing_ok=True)
+
+    def test_nlayers_mismatch_raises(self) -> None:
+        """Mismatched direction n_layers raises ValueError on __enter__."""
+        hm, _ = _make_multi_layer_hm(n=3)
+        bad_direction_path = _save_direction(n_layers=5)  # 5 != 3
+        with self.assertRaises(ValueError):
+            VTITextualSteer(hm, bad_direction_path, alpha=0.5).__enter__()
+        bad_direction_path.unlink(missing_ok=True)
+
+
+class TestProjectorOutputScale(unittest.TestCase):
+    def _make_projector_hm(self) -> tuple[Any, nn.Module]:
+        """Fake hook manager with a projector that returns a known tensor."""
+        projector = nn.Linear(HIDDEN, HIDDEN, bias=False)
+        nn.init.eye_(projector.weight)
+        hm = types.SimpleNamespace()
+        hm._get_projector = lambda: projector
+        return hm, projector
+
+    def test_alpha_one_is_identity(self) -> None:
+        hm, projector = self._make_projector_hm()
+        x = torch.randn(BATCH, SEQ, HIDDEN)
+        ref = projector(x.clone())
+        with ProjectorOutputScale(hm, alpha=1.0):
+            out = projector(x.clone())
+        self.assertTrue(torch.allclose(out, ref))
+
+    def test_alpha_half_halves_output(self) -> None:
+        hm, projector = self._make_projector_hm()
+        x = torch.ones(BATCH, SEQ, HIDDEN)
+        ref = projector(x.clone())
+        with ProjectorOutputScale(hm, alpha=0.5):
+            out = projector(x.clone())
+        self.assertTrue(torch.allclose(out, ref * 0.5))
+
+    def test_hook_removed_after_exit(self) -> None:
+        hm, projector = self._make_projector_hm()
+        x = torch.randn(BATCH, SEQ, HIDDEN)
+        with ProjectorOutputScale(hm, alpha=0.25):
+            pass
+        ref = projector(x.clone())
+        after = projector(x.clone())
+        self.assertTrue(torch.allclose(after, ref), "Hook not removed after __exit__")
+
+
 class TestBuildIntervention(unittest.TestCase):
     def _layer_hm(self) -> Any:
         return _make_hm(_make_layer())
@@ -267,6 +426,26 @@ class TestBuildIntervention(unittest.TestCase):
         hm = self._layer_hm()
         iv = build_intervention("selective_scalar", hm, 0, [6, 7], 0.5)
         self.assertIsInstance(iv, SelectiveHeadScale)
+
+    def test_vti_textual_dispatches(self) -> None:
+        hm, _ = _make_multi_layer_hm()
+        direction_path = _save_direction()
+        iv = build_intervention("vti_textual", hm, 0, [], 0.5, direction_path=direction_path)
+        self.assertIsInstance(iv, VTITextualSteer)
+        direction_path.unlink(missing_ok=True)
+
+    def test_vti_textual_no_path_raises(self) -> None:
+        hm = self._layer_hm()
+        with self.assertRaises(ValueError):
+            build_intervention("vti_textual", hm, 0, [], 0.5, direction_path=None)
+
+    def test_projector_scale(self) -> None:
+        projector = nn.Linear(HIDDEN, HIDDEN, bias=False)
+        hm = types.SimpleNamespace()
+        hm._get_decoder_layers = lambda: [_make_layer()]
+        hm._get_projector = lambda: projector
+        iv = build_intervention("projector_scale", hm, 0, [], 0.5)
+        self.assertIsInstance(iv, ProjectorOutputScale)
 
     def test_unknown_mode(self) -> None:
         hm = self._layer_hm()

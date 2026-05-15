@@ -80,7 +80,8 @@ def _print_heatmap(out_path: Path) -> None:
         return
 
     # filter to records where corruption actually hurt (logit_clean > logit_corrupt)
-    rows = [r for r in rows if r["logit_clean"] > r["logit_corrupt"]]
+    from probe.tracing.filters import filter_non_warn
+    rows = filter_non_warn(rows)
     if not rows:
         print("All records were WARN (logit_clean ≤ logit_corrupt) — nothing to show.")
         return
@@ -109,12 +110,14 @@ def _print_heatmap(out_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Full probe-set patching sweep")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "seed"],
+                        choices=["llava", "llava_vq", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "seed", "gill", "showo"],
                         help="Model backend (default: llava)")
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
     parser.add_argument("--vq_path", default=None,
-                        help="[emu3 only] Path or HF hub ID of Emu3-VisionTokenizer")
+                        help="[emu3/showo only] Path or HF hub ID of VQ tokenizer")
+    parser.add_argument("--projector_ckpt", default=None,
+                        help="[llava_vq only] Path to trained VQLinearProjector checkpoint")
     parser.add_argument("--max_image_size", type=int, default=256,
                         help="[emu3 only] Cap image dimensions before VQ-encoding (default 256→1024 tokens)")
     parser.add_argument("--model_path", required=True)
@@ -155,6 +158,30 @@ def main() -> None:
         )
         model.eval()
         hm = LlavaHookManager(model, tokenizer, image_processor)
+    elif args.backend == "llava_vq":
+        import torch as _torch
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = _torch.load(ckpt_path, map_location="cpu")
+            vq_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor)
     elif args.backend == "vilau":
         _vilau = os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
         if _vilau not in sys.path:
@@ -303,6 +330,40 @@ def main() -> None:
         )
         model = model.eval().to(device)
         hm = SeedHookManager(model, tokenizer)
+    elif args.backend == "gill":
+        _gill = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "gill"))
+        if _gill not in sys.path:
+            sys.path.insert(0, _gill)
+        from probe.hooks.gill import GillHookManager
+        hm = GillHookManager(model_path=args.model_path)
+        tokenizer = hm.tokenizer
+    elif args.backend == "showo":
+        import torch
+        _showo = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "Show-o"))
+        if _showo not in sys.path:
+            sys.path.insert(0, _showo)
+        if args.vq_path is None:
+            raise ValueError("--vq_path is required for --backend showo (e.g. showlab/magvitv2)")
+        from models import Showo, MAGVITv2
+        from training.prompting_utils import UniversalPrompting
+        from transformers import AutoTokenizer
+        from probe.hooks.showo import ShowoHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _phi_tok = args.tokenizer_path if args.tokenizer_path else "microsoft/phi-1_5"
+        tokenizer = AutoTokenizer.from_pretrained(_phi_tok, padding_side="left")
+        uni_prompting = UniversalPrompting(
+            tokenizer,
+            special_tokens=(
+                "<|soi|>", "<|eoi|>", "<|sov|>", "<|eov|>",
+                "<|t2i|>", "<|mmu|>", "<|t2v|>", "<|v2v|>", "<|lvg|>",
+            ),
+            ignore_id=-100,
+            cond_dropout_prob=0.0,
+        )
+        vq_model = MAGVITv2.from_pretrained(args.vq_path).to(device).eval()
+        vq_model.requires_grad_(False)
+        model = Showo.from_pretrained(args.model_path).to(device).eval()
+        hm = ShowoHookManager(model, tokenizer, vq_model, uni_prompting, resolution=256)
     else:  # vila
         _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
         if _vila not in sys.path:

@@ -1,8 +1,7 @@
-probe/tracing/__pycache__/
-probe/hooks/__pycache__/
-probe/__pycache__/
 .claude/
 .codex
 .vscode/
 __pycache__/
 START_SESSION_PROMPT.md
+
+data/

@@ -149,6 +149,7 @@ def _load_hook_manager(args: argparse.Namespace):
                 sys.path.insert(0, _p)
         from haploomni import HaploOmniForConditionalGeneration, HaploOmniProcessor
         from probe.hooks.haplo import HaploOmniHookManager
+        import torch
         processor = HaploOmniProcessor.from_pretrained(args.model_path)
         model = HaploOmniForConditionalGeneration.from_pretrained(
             args.model_path,
@@ -164,6 +165,7 @@ def _load_hook_manager(args: argparse.Namespace):
             raise ValueError("--vq_path is required for --backend emu3")
         from transformers import AutoTokenizer, AutoModel, AutoImageProcessor, AutoModelForCausalLM
         from probe.hooks.emu3 import Emu3HookManager
+        import torch
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_path, trust_remote_code=True, padding_side="left"
         )
@@ -183,6 +185,126 @@ def _load_hook_manager(args: argparse.Namespace):
         hm = Emu3HookManager(model, tokenizer, image_processor, image_tokenizer,
                              max_image_size=getattr(args, "max_image_size", 256))
         return hm, tokenizer
+
+    if args.backend == "lavit":
+        import torch
+        _lavit = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LaVIT")
+        )
+        if _lavit not in sys.path:
+            sys.path.insert(0, _lavit)
+        from models import build_model
+        from probe.hooks.lavit import LavitHookManager
+        model = build_model(
+            model_path=args.model_path,
+            model_dtype="bf16",
+            device_id=0,
+            use_xformers=False,
+            understanding=True,
+            local_files_only=True,
+        )
+        model = model.to("cuda")
+        model.eval()
+        return LavitHookManager(model), model.llama_tokenizer
+
+    if args.backend == "seed":
+        import torch
+        _seed = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "SEED")
+        )
+        if _seed not in sys.path:
+            sys.path.insert(0, _seed)
+        from models.model_tools import get_pretrained_llama_causal_model
+        from models.seed_llama_tokenizer import SeedLlamaTokenizer
+        from probe.hooks.seed import SeedHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _tok_path = args.tokenizer_path or "AILab-CVC/seed-tokenizer-2"
+        if os.path.isdir(_tok_path):
+            _encoder_path = os.path.join(_tok_path, "seed_quantizer.pt")
+        else:
+            from huggingface_hub import hf_hub_download
+            _encoder_path = hf_hub_download(repo_id=_tok_path, filename="seed_quantizer.pt")
+        tokenizer = SeedLlamaTokenizer.from_pretrained(
+            _tok_path,
+            fp16=True,
+            load_diffusion=False,
+            encoder_url=_encoder_path,
+            device=str(device),
+        )
+        model = get_pretrained_llama_causal_model(
+            pretrained_model_name_or_path=args.model_path,
+            torch_dtype="fp16",
+            low_cpu_mem_usage=True,
+        )
+        model = model.eval().to(device)
+        return SeedHookManager(model, tokenizer), tokenizer
+
+    if args.backend == "gill":
+        _gill = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "gill")
+        )
+        if _gill not in sys.path:
+            sys.path.insert(0, _gill)
+        from probe.hooks.gill import GillHookManager
+        hm = GillHookManager(model_path=args.model_path)
+        return hm, hm.tokenizer
+
+    if args.backend == "showo":
+        import torch
+        _showo = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "Show-o")
+        )
+        if _showo not in sys.path:
+            sys.path.insert(0, _showo)
+        if args.vq_path is None:
+            raise ValueError("--vq_path is required for --backend showo (e.g. showlab/magvitv2)")
+        from models import Showo, MAGVITv2
+        from training.prompting_utils import UniversalPrompting
+        from transformers import AutoTokenizer
+        from probe.hooks.showo import ShowoHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _phi_tok = args.tokenizer_path or "microsoft/phi-1_5"
+        tokenizer = AutoTokenizer.from_pretrained(_phi_tok, padding_side="left")
+        uni_prompting = UniversalPrompting(
+            tokenizer,
+            special_tokens=(
+                "<|soi|>", "<|eoi|>", "<|sov|>", "<|eov|>",
+                "<|t2i|>", "<|mmu|>", "<|t2v|>", "<|v2v|>", "<|lvg|>",
+            ),
+            ignore_id=-100,
+            cond_dropout_prob=0.0,
+        )
+        vq_model = MAGVITv2.from_pretrained(args.vq_path).to(device).eval()
+        vq_model.requires_grad_(False)
+        model = Showo.from_pretrained(args.model_path).to(device).eval()
+        return ShowoHookManager(model, tokenizer, vq_model, uni_prompting, resolution=256), tokenizer
+
+    if args.backend == "llava_vq":
+        import torch as _torch
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        _ckpt = getattr(args, "projector_ckpt", None)
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        if _ckpt and os.path.exists(_ckpt):
+            state = _torch.load(_ckpt, map_location="cpu")
+            vq_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        return LlavaVQHookManager(model, tokenizer, image_processor), tokenizer
 
     raise ValueError(f"Unknown backend {args.backend!r}")
 
@@ -222,6 +344,10 @@ def _score(bench: str, predictions: list[dict]) -> dict:
 def _load_done_ids(out_path: Path) -> set[str]:
     if not out_path.exists():
         return set()
+    from probe.benchmarks._dedupe import dedupe_jsonl_by_record_id
+    before, after = dedupe_jsonl_by_record_id(out_path)
+    if before != after:
+        print(f"[resume] Removed {before - after} duplicate rows from {out_path.name}")
     done: set[str] = set()
     with out_path.open() as f:
         for line in f:
@@ -247,13 +373,15 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["llava", "vila", "vilau", "unitok", "qwen3vl", "haplo", "emu3"],
+        choices=["llava", "vila", "vilau", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "seed", "gill", "showo", "llava_vq"],
     )
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--tokenizer_path", default=None,
-                        help="[unitok only] path to unitok_tokenizer.pth")
+                        help="[unitok/seed/showo] path to tokenizer checkpoint")
     parser.add_argument("--vq_path", default=None,
-                        help="[emu3 only] path or HF hub ID of Emu3-VisionTokenizer")
+                        help="[emu3/showo] path or HF hub ID of VQ tokenizer")
+    parser.add_argument("--projector_ckpt", default=None,
+                        help="[llava_vq] path to trained VQLinearProjector checkpoint")
     parser.add_argument("--max_image_size", type=int, default=256,
                         help="[emu3 only] cap image dimensions before VQ-encoding (default 256→1024 tokens)")
     parser.add_argument("--out", required=True, help="Output JSONL (resumable)")
@@ -261,13 +389,33 @@ def main() -> None:
     # Intervention args
     parser.add_argument(
         "--knockout_mode",
-        choices=["pathological_route_ablation", "full_zero", "selective", "scalar", "selective_scalar"],
+        choices=[
+            "pathological_route_ablation", "full_zero",
+            "selective", "scalar", "selective_scalar",
+            "window_attn_knockout",
+            "vti_textual",
+            "projector_scale",
+        ],
         default=None,
-        help="full_zero is a deprecated alias for pathological_route_ablation",
+        help="full_zero is deprecated alias; window_attn_knockout requires --knockout_layer_end or "
+             "--auto_window; vti_textual (N-047) requires --vti_direction; "
+             "projector_scale (N-057) multiplies projector output by --alpha",
     )
     parser.add_argument("--knockout_layer", type=int, default=0)
+    parser.add_argument(
+        "--knockout_layer_end", type=int, default=None,
+        help="End layer (exclusive) for window_attn_knockout. Auto-set when --auto_window is used.",
+    )
+    parser.add_argument(
+        "--auto_window", action="store_true",
+        help="Read best visual window from results/sweep_<backend>.jsonl and use window_attn_knockout",
+    )
     parser.add_argument("--heads", default="6,7,14")
     parser.add_argument("--alpha", type=float, default=0.5)
+    parser.add_argument(
+        "--vti_direction", default=None,
+        help="[vti_textual] path to direction tensor (n_layers, hidden) from vti_calibrate.py",
+    )
     args = parser.parse_args()
 
     out_path = Path(args.out)
@@ -281,6 +429,24 @@ def main() -> None:
     for r in records:
         r.answer_token_id = yes_id if r.answer == "yes" else no_id
 
+    if args.auto_window:
+        from probe.tracing.best_window import best_visual_window
+        from pathlib import Path as _Path
+        _sweep_path = _Path(f"results/sweep_{args.backend}.jsonl")
+        if not _sweep_path.exists():
+            raise FileNotFoundError(
+                f"--auto_window requires {_sweep_path}; run the sweep for {args.backend} first"
+            )
+        _l_start, _l_end, _window_score = best_visual_window(_sweep_path)
+        print(
+            f"Auto-window ({args.backend}): [{_l_start},{_l_end})"
+            f" mean_visual_score={_window_score:.4f}"
+        )
+        args.knockout_layer = _l_start
+        args.knockout_layer_end = _l_end
+        if args.knockout_mode is None:
+            args.knockout_mode = "window_attn_knockout"
+
     intervention = None
     if args.knockout_mode is not None:
         from probe.tracing.head_knockout import build_intervention, _parse_heads
@@ -290,12 +456,27 @@ def main() -> None:
             args.knockout_layer,
             _parse_heads(args.heads),
             args.alpha,
+            layer_end=args.knockout_layer_end,
+            direction_path=args.vti_direction,
         )
-        print(
-            f"Intervention: mode={args.knockout_mode}, layer={args.knockout_layer}"
-            + (f", heads={args.heads}" if args.knockout_mode in ("selective", "selective_scalar") else "")
-            + (f", alpha={args.alpha}" if args.knockout_mode in ("scalar", "selective_scalar") else "")
-        )
+        if args.knockout_mode == "window_attn_knockout":
+            print(
+                f"Intervention: mode={args.knockout_mode},"
+                f" window=[{args.knockout_layer},{args.knockout_layer_end})"
+            )
+        elif args.knockout_mode == "vti_textual":
+            print(
+                f"Intervention: mode={args.knockout_mode},"
+                f" alpha={args.alpha}, direction={args.vti_direction}"
+            )
+        elif args.knockout_mode == "projector_scale":
+            print(f"Intervention: mode={args.knockout_mode}, alpha={args.alpha}")
+        else:
+            print(
+                f"Intervention: mode={args.knockout_mode}, layer={args.knockout_layer}"
+                + (f", heads={args.heads}" if args.knockout_mode in ("selective", "selective_scalar") else "")
+                + (f", alpha={args.alpha}" if args.knockout_mode in ("scalar", "selective_scalar") else "")
+            )
 
     done_ids = _load_done_ids(out_path)
     todo = [r for r in records if r.id not in done_ids]
@@ -320,8 +501,10 @@ def main() -> None:
             "model_path": args.model_path,
             "intervention_mode": args.knockout_mode,
             "knockout_layer": args.knockout_layer,
+            "knockout_layer_end": args.knockout_layer_end,
             "heads": args.heads if args.knockout_mode in ("selective", "selective_scalar") else None,
-            "alpha": args.alpha if args.knockout_mode in ("scalar", "selective_scalar") else None,
+            "alpha": args.alpha if args.knockout_mode in ("scalar", "selective_scalar", "vti_textual", "projector_scale") else None,
+            "vti_direction": args.vti_direction if args.knockout_mode == "vti_textual" else None,
             "n_records": len(rows),
             "metrics": metrics,
         }, indent=2) + "\n")
@@ -379,6 +562,11 @@ def main() -> None:
 
     print(f"\nDone. {len(todo)} records in {(time.time()-t_start)/60:.1f}m")
     # Score from full JSONL (not just all_rows) to guard against partial-resume artifacts.
+    # Dedupe first so duplicate rows from a re-started run don't bias metrics.
+    from probe.benchmarks._dedupe import dedupe_jsonl_by_record_id
+    before, after = dedupe_jsonl_by_record_id(out_path)
+    if before != after:
+        print(f"[score] Removed {before - after} duplicate rows before scoring")
     full_rows: list[dict] = []
     with out_path.open() as f:
         for line in f:
@@ -396,10 +584,13 @@ def main() -> None:
         "bench": args.bench,
         "backend": args.backend,
         "model_path": args.model_path,
+        "projector_ckpt": getattr(args, "projector_ckpt", None),
         "intervention_mode": args.knockout_mode,
         "knockout_layer": args.knockout_layer,
+        "knockout_layer_end": args.knockout_layer_end,
         "heads": args.heads if args.knockout_mode in ("selective", "selective_scalar") else None,
-        "alpha": args.alpha if args.knockout_mode in ("scalar", "selective_scalar") else None,
+        "alpha": args.alpha if args.knockout_mode in ("scalar", "selective_scalar", "vti_textual") else None,
+        "vti_direction": args.vti_direction if args.knockout_mode == "vti_textual" else None,
         "n_records": len(full_rows),
         "metrics": metrics,
     }, indent=2) + "\n")

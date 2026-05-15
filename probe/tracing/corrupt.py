@@ -19,7 +19,12 @@ def foil_embeds(hm, foil_image: Image.Image, question: str) -> torch.Tensor:
     LM sees corrupted visual tokens while the question text is unchanged.
     """
     input_ids, images_tensor, image_sizes = hm._build_prompt(foil_image, question)
-    embeds, _ = hm._prepare_embeds(input_ids, images_tensor, image_sizes)
+    if hasattr(hm, "_prepare_embeds_with_last_keep"):
+        embeds, _ = hm._prepare_embeds_with_last_keep(
+            input_ids, images_tensor, image_sizes
+        )
+    else:
+        embeds, _ = hm._prepare_embeds(input_ids, images_tensor, image_sizes)
     return embeds.detach()
 
 
@@ -43,7 +48,12 @@ def noisy_embeds(
     while the rest of the program's RNG state is unaffected.
     """
     input_ids, images_tensor, image_sizes = hm._build_prompt(clean_image, question)
-    embeds, _ = hm._prepare_embeds(input_ids, images_tensor, image_sizes)
+    if hasattr(hm, "_prepare_embeds_with_last_keep"):
+        embeds, _ = hm._prepare_embeds_with_last_keep(
+            input_ids, images_tensor, image_sizes
+        )
+    else:
+        embeds, _ = hm._prepare_embeds(input_ids, images_tensor, image_sizes)
     embeds = embeds.clone()
     lo, hi = visual_range
     if seed is not None:

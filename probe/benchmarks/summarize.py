@@ -39,11 +39,27 @@ MODEL_LABEL = {
     "llava":   "LLaVA",
     "unitok":  "UniTok",
     "qwen3vl": "Qwen2.5-VL",
+    "seed":    "SEED-LLaMA",
+    "showo":   "Show-o",
+    "haplo":   "HaploOmni",
+    "lavit":   "LaVIT",
 }
 
-MODEL_ORDER  = ["vilau", "llava", "unitok", "qwen3vl"]
+MODEL_ORDER  = ["vilau", "llava", "unitok", "qwen3vl", "seed", "showo", "haplo", "lavit"]
 BENCH_ORDER  = ["pope_full", "nb_full", "hb", "amber"]
-MODE_ORDER   = ["baseline", "intervention"]
+# Canonical modes: "baseline", "intervention" (pathological_route_ablation),
+# "vti" (VTITextualSteer), "vista" (future VISTASteer)
+MODE_ORDER   = ["baseline", "vti", "intervention"]
+
+# Map intervention_mode field value → canonical table mode key
+_INTERVENTION_MODE_MAP: dict[str, str] = {
+    None:                           "baseline",
+    "pathological_route_ablation":  "intervention",
+    "full_zero":                    "intervention",   # legacy alias
+    "window_attn_knockout":         "intervention",
+    "vti_textual":                  "vti",
+    "vista":                        "vista",
+}
 
 
 def load_meta(results_dir: Path) -> list[dict]:
@@ -66,24 +82,30 @@ def extract_primary_metric(meta: dict) -> float | None:
 
 
 def build_table(metas: list[dict]) -> dict:
-    """Return {(model, bench, mode): {metric: val, ...}}."""
+    """Return {(model, bench, mode): {metric: val, ...}}.
+
+    Modes: "baseline", "intervention", "vti", "vista"
+    """
     table: dict = {}
     for m in metas:
-        model   = m.get("backend")
-        bench   = m.get("bench")
-        # intervention_mode is the new field; knockout_mode is the legacy alias.
-        imode   = m.get("intervention_mode") or m.get("knockout_mode")
-        mode    = "baseline" if imode is None else "intervention"
+        model = m.get("backend")
+        bench = m.get("bench")
+        imode = m.get("intervention_mode") or m.get("knockout_mode")
+        mode  = _INTERVENTION_MODE_MAP.get(imode, "intervention")
         if not (model and bench):
             continue
         key = (model, bench, mode)
-        table[key] = {
+        n = m.get("n_records") or 0
+        entry = {
             "primary": extract_primary_metric(m),
             "metrics": m.get("metrics", {}),
-            "n_records": m.get("n_records"),
+            "n_records": n,
             "intervention_mode": imode,
             "knockout_layer": m.get("knockout_layer"),
         }
+        # Keep the entry with the larger n_records (smoke runs don't overwrite real runs)
+        if key not in table or n > (table[key].get("n_records") or 0):
+            table[key] = entry
     return table
 
 
@@ -91,33 +113,42 @@ def render_markdown(table: dict) -> str:
     lines = []
     lines.append("# Benchmark Summary — Pathological-route ablation (L0)\n")
 
+    def fmt(v: float | None) -> str:
+        return "—" if v is None else f"{v * 100:.1f}%"
+
+    def delta_str(base: float | None, intr: float | None) -> str:
+        if base is None or intr is None:
+            return "—"
+        d = (intr - base) * 100
+        return f"{'+'if d >= 0 else ''}{d:.1f}pt"
+
     for bench in BENCH_ORDER:
         label = BENCH_LABEL.get(bench, bench)
         metric_key = BENCH_METRIC.get(bench, "accuracy")
         lines.append(f"## {label} (`{metric_key}`)\n")
 
-        header = "| Model | Baseline | Intervention | Δ |"
-        sep    = "|---|---|---|---|"
+        # Determine which non-baseline modes have any data for this bench
+        extra_modes = [m for m in MODE_ORDER[1:]
+                       if any((mdl, bench, m) in table for mdl in MODEL_ORDER)]
+
+        col_headers = ["Baseline"] + [m.upper() for m in extra_modes] + \
+                      ["Δ " + m.upper() for m in extra_modes]
+        header = "| Model | " + " | ".join(col_headers) + " |"
+        sep    = "|" + "|".join(["---"] * (len(col_headers) + 1)) + "|"
         lines.append(header)
         lines.append(sep)
 
         for model in MODEL_ORDER:
-            model_label = MODEL_LABEL.get(model, model)
-            base = table.get((model, bench, "baseline"), {}).get("primary")
-            intr = table.get((model, bench, "intervention"), {}).get("primary")
-
-            def fmt(v: float | None) -> str:
-                if v is None:
-                    return "—"
-                return f"{v * 100:.1f}%"
-
-            delta_str = "—"
-            if base is not None and intr is not None:
-                delta = (intr - base) * 100
-                sign = "+" if delta >= 0 else ""
-                delta_str = f"{sign}{delta:.1f}pt"
-
-            lines.append(f"| {model_label} | {fmt(base)} | {fmt(intr)} | {delta_str} |")
+            mlabel = MODEL_LABEL.get(model, model)
+            base   = table.get((model, bench, "baseline"), {}).get("primary")
+            row_vals = [fmt(base)]
+            for m in extra_modes:
+                v = table.get((model, bench, m), {}).get("primary")
+                row_vals.append(fmt(v))
+            for m in extra_modes:
+                v = table.get((model, bench, m), {}).get("primary")
+                row_vals.append(delta_str(base, v))
+            lines.append("| " + mlabel + " | " + " | ".join(row_vals) + " |")
 
         lines.append("")
 
@@ -134,10 +165,16 @@ def render_figure(table: dict, out_dir: Path) -> None:
         print("  matplotlib not available — skipping figure")
         return
 
-    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
-    fig.suptitle("Pathological-route ablation (L0) — effect by model and benchmark", fontsize=13)
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    fig.suptitle("Benchmark results: baseline / VTI / pathological-route ablation (L0)",
+                 fontsize=12)
 
-    colors = {"baseline": "#4878d0", "intervention": "#ee854a"}
+    mode_colors = {
+        "baseline":     "#4878d0",
+        "vti":          "#6acc65",
+        "intervention": "#ee854a",
+        "vista":        "#d65f5f",
+    }
     model_order = [m for m in MODEL_ORDER if any(
         (m, bench, mode) in table for bench in BENCH_ORDER for mode in MODE_ORDER
     )]
@@ -145,40 +182,30 @@ def render_figure(table: dict, out_dir: Path) -> None:
 
     for ax, bench in zip(axes, BENCH_ORDER):
         label = BENCH_LABEL[bench]
+        active_modes = [m for m in MODE_ORDER
+                        if any((mdl, bench, m) in table for mdl in model_order)]
         x = np.arange(len(model_order))
-        width = 0.35
-        for i, (mode, color) in enumerate(colors.items()):
-            vals = []
-            for model in model_order:
-                v = table.get((model, bench, mode), {}).get("primary")
-                vals.append((v or 0) * 100)
-            bars = ax.bar(x + (i - 0.5) * width, vals, width, label=mode.capitalize(),
+        n_modes = len(active_modes)
+        width = 0.7 / max(n_modes, 1)
+
+        for i, mode in enumerate(active_modes):
+            offset = (i - (n_modes - 1) / 2.0) * width
+            vals = [(table.get((mdl, bench, mode), {}).get("primary") or 0) * 100
+                    for mdl in model_order]
+            color = mode_colors.get(mode, "#888888")
+            bars = ax.bar(x + offset, vals, width * 0.9, label=mode.upper(),
                           color=color, alpha=0.85)
             for bar, v in zip(bars, vals):
                 if v > 0:
-                    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                            f"{v:.0f}", ha="center", va="bottom", fontsize=7)
-
-        # Draw Δ arrows for VILA-U
-        if "vilau" in model_order:
-            idx = model_order.index("vilau")
-            b = table.get(("vilau", bench, "baseline"), {}).get("primary")
-            n = table.get(("vilau", bench, "intervention"), {}).get("primary")
-            if b is not None and n is not None:
-                delta = (n - b) * 100
-                sign = "+" if delta >= 0 else ""
-                ax.annotate(f"{sign}{delta:.1f}pt",
-                            xy=(x[idx], max(b, n) * 100 + 2),
-                            ha="center", va="bottom", fontsize=8,
-                            color="green" if delta >= 0 else "red",
-                            fontweight="bold")
+                    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                            f"{v:.0f}", ha="center", va="bottom", fontsize=6)
 
         ax.set_title(label, fontsize=11)
         ax.set_xticks(x)
-        ax.set_xticklabels(model_labels, rotation=20, ha="right", fontsize=9)
-        ax.set_ylim(0, 105)
-        ax.set_ylabel("Score (%)")
-        ax.legend(fontsize=8)
+        ax.set_xticklabels(model_labels, rotation=25, ha="right", fontsize=8)
+        ax.set_ylim(0, 108)
+        ax.set_ylabel("Score (%)", fontsize=9)
+        ax.legend(fontsize=7)
         ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()

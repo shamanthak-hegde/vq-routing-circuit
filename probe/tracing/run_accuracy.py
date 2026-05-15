@@ -188,7 +188,7 @@ def print_report(rows: list[dict], warn_flags: dict[str, bool]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Clean-run accuracy sweep")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "lavit"])
+                        choices=["llava", "llava_vq", "vilau", "vila", "unitok", "qwen3vl", "lavit"])
     parser.add_argument("--model_path", default=None)
     parser.add_argument("--sweep_results", default=None,
                         help="Existing sweep JSONL for WARN cross-tabulation")
@@ -202,19 +202,41 @@ def main() -> None:
     # N-040A/C: optional intervention applied around every run_prefill call
     parser.add_argument(
         "--knockout_mode",
-        choices=["pathological_route_ablation", "full_zero", "selective", "scalar", "selective_scalar"],
+        choices=[
+            "pathological_route_ablation", "full_zero",
+            "selective", "scalar", "selective_scalar",
+            "window_attn_knockout",
+            "vti_textual",
+            "projector_scale",
+        ],
         default=None,
-        help="If set, apply the named L0 intervention from head_knockout.py (full_zero is deprecated alias for pathological_route_ablation)",
+        help="If set, apply intervention from head_knockout.py (full_zero is deprecated alias); "
+             "vti_textual (N-047) requires --vti_direction; "
+             "projector_scale (N-057) multiplies projector output by --alpha",
     )
     parser.add_argument("--knockout_layer", type=int, default=0)
+    parser.add_argument(
+        "--knockout_layer_end", type=int, default=None,
+        help="End layer (exclusive) for window_attn_knockout. Auto-set when --auto_window is used.",
+    )
+    parser.add_argument(
+        "--auto_window", action="store_true",
+        help="Read best visual window from results/sweep_<backend>.jsonl and use window_attn_knockout",
+    )
     parser.add_argument(
         "--heads", default="6,7,14",
         help="Comma-separated head indices (selective / selective_scalar modes)",
     )
     parser.add_argument("--alpha", type=float, default=0.5,
-                        help="Scale factor (scalar / selective_scalar modes)")
+                        help="Scale factor (scalar / selective_scalar / vti_textual modes)")
+    parser.add_argument(
+        "--vti_direction", default=None,
+        help="[vti_textual] path to direction tensor (n_layers, hidden) from vti_calibrate.py",
+    )
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] path to unitok_tokenizer.pth")
+    parser.add_argument("--projector_ckpt", default=None,
+                        help="[llava_vq only] path to VQLinearProjector checkpoint")
     args = parser.parse_args()
 
     out_path = Path(args.out)
@@ -256,6 +278,30 @@ def main() -> None:
         )
         model.eval()
         hm = LlavaHookManager(model, tokenizer, image_processor)
+    elif args.backend == "llava_vq":
+        import torch as _torch
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = _torch.load(ckpt_path, map_location="cpu")
+            vq_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor)
     elif args.backend == "vilau":
         _vilau = os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
         if _vilau not in sys.path:
@@ -345,6 +391,21 @@ def main() -> None:
         hm = VilaHookManager(model, tokenizer, image_processor)
 
     # ── build optional intervention ───────────────────────────────────────────
+    if args.auto_window:
+        from probe.tracing.best_window import best_visual_window
+        from pathlib import Path as _Path
+        _sweep_path = _Path(f"results/sweep_{args.backend}.jsonl")
+        if not _sweep_path.exists():
+            raise FileNotFoundError(
+                f"--auto_window requires {_sweep_path}; run the sweep for {args.backend} first"
+            )
+        _l_start, _l_end, _score = best_visual_window(_sweep_path)
+        print(f"Auto-window ({args.backend}): [{_l_start},{_l_end}) mean_visual_score={_score:.4f}")
+        args.knockout_layer = _l_start
+        args.knockout_layer_end = _l_end
+        if args.knockout_mode is None:
+            args.knockout_mode = "window_attn_knockout"
+
     intervention = None
     if args.knockout_mode is not None:
         from probe.tracing.head_knockout import build_intervention, _parse_heads
@@ -354,12 +415,27 @@ def main() -> None:
             args.knockout_layer,
             _parse_heads(args.heads),
             args.alpha,
+            layer_end=args.knockout_layer_end,
+            direction_path=args.vti_direction,
         )
-        print(
-            f"Intervention: mode={args.knockout_mode}, layer={args.knockout_layer}"
-            + (f", heads={args.heads}" if args.knockout_mode in ("selective", "selective_scalar") else "")
-            + (f", alpha={args.alpha}" if args.knockout_mode in ("scalar", "selective_scalar") else "")
-        )
+        if args.knockout_mode == "window_attn_knockout":
+            print(
+                f"Intervention: mode={args.knockout_mode},"
+                f" window=[{args.knockout_layer},{args.knockout_layer_end})"
+            )
+        elif args.knockout_mode == "vti_textual":
+            print(
+                f"Intervention: mode={args.knockout_mode},"
+                f" alpha={args.alpha}, direction={args.vti_direction}"
+            )
+        elif args.knockout_mode == "projector_scale":
+            print(f"Intervention: mode={args.knockout_mode}, alpha={args.alpha}")
+        else:
+            print(
+                f"Intervention: mode={args.knockout_mode}, layer={args.knockout_layer}"
+                + (f", heads={args.heads}" if args.knockout_mode in ("selective", "selective_scalar") else "")
+                + (f", alpha={args.alpha}" if args.knockout_mode in ("scalar", "selective_scalar") else "")
+            )
 
     # ── load probe records ────────────────────────────────────────────────────
     import torch

@@ -82,13 +82,16 @@ def _main():
 
     parser = argparse.ArgumentParser(description="Calibrate sigma for POPE gaussian_noise")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "showo", "seed"],
+                        choices=["llava", "llava_vq", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "showo", "seed", "gill"],
                         help="Model backend (default: llava)")
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
     parser.add_argument("--vq_path", default=None,
                         help="[emu3/showo only] Path or HF hub ID of VQ tokenizer "
                              "(Emu3-VisionTokenizer or showlab/magvitv2)")
+    parser.add_argument("--projector_ckpt", default=None,
+                        help="[llava_vq only] Path to trained VQLinearProjector checkpoint "
+                             "(checkpoints/llava_vq/projector_final.pt)")
     parser.add_argument("--max_image_size", type=int, default=256,
                         help="[emu3 only] Cap image dimensions before VQ-encoding (default 256→1024 tokens)")
     parser.add_argument("--model_path", required=True)
@@ -123,6 +126,29 @@ def _main():
         )
         model.eval()
         hm = LlavaHookManager(model, tokenizer, image_processor)
+    elif args.backend == "llava_vq":
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            vq_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor)
     elif args.backend == "vilau":
         _vilau = os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
         if _vilau not in sys.path:
@@ -289,6 +315,12 @@ def _main():
         vq_model.requires_grad_(False)
         model = Showo.from_pretrained(args.model_path).to(device).eval()
         hm = ShowoHookManager(model, tokenizer, vq_model, uni_prompting, resolution=256)
+    elif args.backend == "gill":
+        _gill = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "gill"))
+        if _gill not in sys.path:
+            sys.path.insert(0, _gill)
+        from probe.hooks.gill import GillHookManager
+        hm = GillHookManager(model_path=args.model_path)
     else:  # vila
         _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
         if _vila not in sys.path:

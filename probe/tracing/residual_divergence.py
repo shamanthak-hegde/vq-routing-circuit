@@ -29,6 +29,15 @@ Usage
         --sigma 0.2 \\
         --out results/residual_divergence_unitok.json
 
+    # Show-o (conda: showo)
+    python -m probe.tracing.residual_divergence \\
+        --backend showo \\
+        --model_path showlab/show-o \\
+        --vq_path showlab/magvitv2 \\
+        --sigma 0.1 \\
+        --source naturalbench \\
+        --out results/residual_divergence_showo.json
+
     # Figure (any env with matplotlib)
     python -m probe.tracing.residual_divergence_figure
 """
@@ -145,19 +154,31 @@ def main() -> None:
         description="Per-layer residual divergence at prompt_last (N-036)"
     )
     parser.add_argument("--backend", required=True,
-                        choices=["vilau", "unitok"],
+                        choices=["vilau", "unitok", "showo", "seed", "llava_vq", "emu3"],
                         help="Model backend to run")
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
+    parser.add_argument("--vq_path", default=None,
+                        help="[showo/emu3] HuggingFace path for VQ tokenizer")
+    parser.add_argument("--projector_ckpt", default=None,
+                        help="[llava_vq only] Path to trained VQLinearProjector checkpoint")
+    parser.add_argument("--max_image_size", type=int, default=256,
+                        help="[emu3 only] Cap image dimensions before VQ-encoding (default 256)")
     parser.add_argument("--sigma", type=float, required=True,
                         help="Post-projector noise σ (use σ_cal for each backend)")
     parser.add_argument("--out", default=None,
                         help="Output JSON path (default: results/residual_divergence_<backend>.json)")
     parser.add_argument("--records_from",
-                        default="results/codebook_probe_unitok.jsonl",
+                        default=None,
                         help="JSONL file from which to extract record_ids to measure "
-                             "(default: codebook_probe_unitok.jsonl — the 20 Sub-test B records)")
+                             "(default: results/codebook_probe_<backend>.jsonl; "
+                             "if that file is absent, falls back to non-WARN records "
+                             "from results/sweep_<backend>.jsonl)")
+    parser.add_argument("--source", default="pope",
+                        choices=["pope", "naturalbench", "all"],
+                        help="Which probe-set source to sample from (default: pope). "
+                             "Use naturalbench for Show-o where POPE WARN rate is 86%%.")
     parser.add_argument("--n_records", type=int, default=None,
                         help="Max records to process (default: all from --records_from)")
     parser.add_argument("--seed", type=int, default=0,
@@ -168,6 +189,9 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ── load target record IDs ────────────────────────────────────────────────
+    if args.records_from is None:
+        args.records_from = f"results/codebook_probe_{args.backend}.jsonl"
+
     target_ids: list[str] = []
     records_from = Path(args.records_from)
     if records_from.exists():
@@ -189,7 +213,34 @@ def main() -> None:
 
     # ── load model ────────────────────────────────────────────────────────────
     print(f"\nLoading {args.backend} model from {args.model_path} ...")
-    if args.backend == "vilau":
+    if args.backend == "llava_vq":
+        import torch  # noqa: needed; seed branch also imports torch locally
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            vq_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor)
+
+    elif args.backend == "vilau":
         _vilau = os.path.normpath(
             os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
         )
@@ -203,7 +254,7 @@ def main() -> None:
         model.eval()
         hm = VilaUHookManager(model, tokenizer, image_processor)
 
-    else:  # unitok
+    elif args.backend == "unitok":
         _unitok = os.path.normpath(
             os.path.join(os.path.dirname(__file__), "..", "..", "UniTok")
         )
@@ -235,33 +286,124 @@ def main() -> None:
         del ckpt
         hm = UniTokHookManager(model, tokenizer, vq_model)
 
+    elif args.backend == "seed":
+        import torch
+        _seed = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "SEED")
+        )
+        if _seed not in sys.path:
+            sys.path.insert(0, _seed)
+        from models.model_tools import get_pretrained_llama_causal_model
+        from models.seed_llama_tokenizer import SeedLlamaTokenizer
+        from probe.hooks.seed import SeedHookManager
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _tok_path = args.tokenizer_path if args.tokenizer_path else "AILab-CVC/seed-tokenizer-2"
+        if os.path.isdir(_tok_path):
+            _encoder_path = os.path.join(_tok_path, "seed_quantizer.pt")
+        else:
+            from huggingface_hub import hf_hub_download
+            _encoder_path = hf_hub_download(repo_id=_tok_path, filename="seed_quantizer.pt")
+        tokenizer = SeedLlamaTokenizer.from_pretrained(
+            _tok_path,
+            fp16=True,
+            load_diffusion=False,
+            encoder_url=_encoder_path,
+            device=str(device),
+        )
+        model = get_pretrained_llama_causal_model(
+            pretrained_model_name_or_path=args.model_path,
+            torch_dtype="fp16",
+            low_cpu_mem_usage=True,
+        )
+        model = model.eval().to(device)
+        hm = SeedHookManager(model, tokenizer)
+
+    elif args.backend == "showo":
+        _showo = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "Show-o")
+        )
+        if _showo not in sys.path:
+            sys.path.insert(0, _showo)
+        if args.vq_path is None:
+            parser.error("--vq_path is required for --backend showo (e.g. showlab/magvitv2)")
+        from models import Showo, MAGVITv2
+        from training.prompting_utils import UniversalPrompting
+        from transformers import AutoTokenizer
+        from probe.hooks.showo import ShowoHookManager
+
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        _phi_tok = args.tokenizer_path if args.tokenizer_path else "microsoft/phi-1_5"
+        tokenizer = AutoTokenizer.from_pretrained(_phi_tok, padding_side="left")
+        uni_prompting = UniversalPrompting(
+            tokenizer,
+            special_tokens=(
+                "<|soi|>", "<|eoi|>", "<|sov|>", "<|eov|>",
+                "<|t2i|>", "<|mmu|>", "<|t2v|>", "<|v2v|>", "<|lvg|>",
+            ),
+            ignore_id=-100,
+            cond_dropout_prob=0.0,
+        )
+        vq_model = MAGVITv2.from_pretrained(args.vq_path).to(device).eval()
+        vq_model.requires_grad_(False)
+        model = Showo.from_pretrained(args.model_path).to(device).eval()
+        hm = ShowoHookManager(model, tokenizer, vq_model, uni_prompting, resolution=256)
+
+    elif args.backend == "emu3":
+        import torch
+        if args.vq_path is None:
+            parser.error("--vq_path is required for --backend emu3 (e.g. BAAI/Emu3-VisionTokenizer)")
+        from transformers import (AutoTokenizer, AutoModel,
+                                  AutoImageProcessor, AutoModelForCausalLM)
+        from probe.hooks.emu3 import Emu3HookManager
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_path, trust_remote_code=True, padding_side="left"
+        )
+        image_processor = AutoImageProcessor.from_pretrained(
+            args.vq_path, trust_remote_code=True
+        )
+        image_tokenizer = AutoModel.from_pretrained(
+            args.vq_path, device_map="cuda:0", trust_remote_code=True
+        ).eval()
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path, device_map="cuda:0", torch_dtype=torch.bfloat16,
+            attn_implementation="eager", trust_remote_code=True,
+        ).eval()
+        hm = Emu3HookManager(model, tokenizer, image_processor, image_tokenizer,
+                             max_image_size=args.max_image_size)
+
+    else:
+        raise ValueError(f"Unknown backend {args.backend!r}")
+
     # ── load probe records ────────────────────────────────────────────────────
     from probe import load_cache, resolve_answer_token_ids
     records, _, _ = load_cache()
     resolve_answer_token_ids(records, tokenizer)
 
+    src_filter = (lambda r: True) if args.source == "all" else \
+                 (lambda r: r.source == args.source)
+
     if target_ids:
         id_set = set(target_ids)
-        todo = [r for r in records if r.id in id_set and r.source == "pope"]
-        # Preserve order from target_ids
+        todo = [r for r in records if r.id in id_set and src_filter(r)]
         order = {rid: i for i, rid in enumerate(target_ids)}
         todo.sort(key=lambda r: order.get(r.id, 9999))
     else:
-        # Fallback: first n non-WARN POPE records from sweep
+        # Fallback: first n non-WARN records from sweep (filtered by --source)
         sweep_path = Path(f"results/sweep_{args.backend}.jsonl")
         non_warn: set[str] = set()
         if sweep_path.exists():
             warn_flags: dict[str, bool] = {}
+            sweep_src = None if args.source == "all" else args.source
             with open(sweep_path) as f:
                 for line in f:
                     row = json.loads(line.strip())
-                    if row.get("source") != "pope":
+                    if sweep_src and row.get("source") != sweep_src:
                         continue
                     rid = row["record_id"]
-                    is_warn = row["logit_clean"] <= row["logit_corrupt"]
-                    warn_flags[rid] = warn_flags.get(rid, False) or is_warn
+                    from probe.tracing.filters import is_warn_row
+                    warn_flags[rid] = warn_flags.get(rid, False) or is_warn_row(row)
             non_warn = {rid for rid, w in warn_flags.items() if not w}
-        todo = [r for r in records if r.source == "pope" and r.id in non_warn]
+        todo = [r for r in records if src_filter(r) and r.id in non_warn]
 
     if args.n_records is not None:
         todo = todo[:args.n_records]
@@ -275,11 +417,12 @@ def main() -> None:
         print(f"  [{i:2d}/{len(todo)}] {rec.id}", end="  ", flush=True)
         result = measure_record(hm, rec, sigma=args.sigma, seed=args.seed)
         per_record.append(result)
-        # Print early-layer abs_div summary
+        _n = len(result["abs_div"])
+        _late_start = max(8, 3 * _n // 4)
         early = result["abs_div"][:8]
-        late  = result["abs_div"][24:]
+        late  = result["abs_div"][_late_start:]
         print(f"abs_div [0,8) mean={sum(early)/len(early):.2f}  "
-              f"[24,32) mean={sum(late)/len(late):.2f}  "
+              f"[{_late_start},{_n}) mean={sum(late)/len(late) if late else float('nan'):.2f}  "
               f"noise_rms={result['vis_noise_rms']:.3f}")
 
     if not per_record:
@@ -330,13 +473,15 @@ def main() -> None:
         marker = " ◄" if L < 8 else ""
         print(f"  {L:6d}  {mean_abs[L]:10.4f}  {mean_rel[L]:10.4f}  {norm_abs[L]:10.4f}{marker}")
     print("=" * 64)
+    late_start = max(8, 3 * n_layers // 4)
     early_norm = norm_abs[:8]
-    late_norm  = norm_abs[24:]
-    print(f"\nNorm-abs mean [0,8):  {sum(early_norm)/len(early_norm):.4f}")
-    print(f"Norm-abs mean [24,32): {sum(late_norm)/len(late_norm):.4f}")
+    late_norm  = norm_abs[late_start:]
+    print(f"\nNorm-abs mean [0,8):           {sum(early_norm)/len(early_norm):.4f}")
+    if late_norm:
+        print(f"Norm-abs mean [{late_start},{n_layers}): {sum(late_norm)/len(late_norm):.4f}")
     verdict = "AMPLIFICATION" if sum(early_norm)/len(early_norm) > 1.05 else \
               "ATTENUATION"   if sum(early_norm)/len(early_norm) < 0.95 else "FLAT"
-    print(f"Early-layer verdict:  {verdict}")
+    print(f"Early-layer verdict:           {verdict}")
 
 
 if __name__ == "__main__":

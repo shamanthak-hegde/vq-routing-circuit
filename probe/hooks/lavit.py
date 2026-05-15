@@ -44,6 +44,7 @@ import sys
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from PIL import Image
 
 from .base import VLMHookManager
@@ -145,8 +146,10 @@ class LavitHookManager(VLMHookManager):
         torch.manual_seed(42)
 
         with self.model.maybe_autocast():
-            image_embeds, image_attns = self.model.compute_dynamic_visual_embeds(
-                images_tensor
+            image_embeds, image_attns, keep_decision = (
+                self._compute_dynamic_visual_embeds(
+                    images_tensor, keep_decision=None
+                )
             )
             prompt_embeds = self.model.llama_model.get_input_embeddings()(input_ids)
 
@@ -165,9 +168,126 @@ class LavitHookManager(VLMHookManager):
         n_img_total = int(image_attns.sum().item())  # T_real + 2
         n_image_tokens = max(n_img_total - 2, 0)
 
+        self._last_keep_decision = keep_decision.detach().clone()
         # Stash attention_mask for _call_generate.
         self._last_attn_mask = attention_mask
 
+        return inputs_embeds, n_image_tokens
+
+    def _compute_dynamic_visual_embeds(
+        self,
+        images_tensor: torch.Tensor,
+        keep_decision: Optional[torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build LaVIT image embeds, optionally reusing a fixed keep-mask.
+
+        Reusing the clean prefill mask keeps the expanded visual token layout
+        aligned across clean and corrupt passes, which sweep_record requires.
+        """
+        vt = self.model.visual_tokenizer
+        encoder_features = vt.encoder(images_tensor, return_all_features=True)
+        encoder_features = encoder_features[:, 1:, :]
+
+        batch_size, num_patches, _ = encoder_features.shape
+        mask = torch.ones(
+            batch_size,
+            num_patches,
+            1,
+            dtype=encoder_features.dtype,
+            device=encoder_features.device,
+        )
+        pred_score = vt.token_predictor(
+            encoder_features.to(torch.float32), mask
+        ).reshape(batch_size, -1, 2)
+
+        if keep_decision is None:
+            keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0]
+        else:
+            keep_decision = keep_decision.to(
+                device=encoder_features.device,
+                dtype=pred_score.dtype,
+            )
+            if keep_decision.shape != pred_score[:, :, 0].shape:
+                raise ValueError(
+                    "Cached LaVIT keep_decision shape mismatch: "
+                    f"expected {tuple(pred_score[:, :, 0].shape)}, "
+                    f"got {tuple(keep_decision.shape)}"
+                )
+
+        updated_features = vt.causal_encoder(encoder_features, keep_decision)
+        updated_features = vt.vit_proj(updated_features)
+
+        index_select = keep_decision.long().bool()
+        token_num = index_select.long().sum(dim=-1)
+        remained_token = torch.masked_select(
+            updated_features, index_select[:, :, None]
+        ).reshape(-1, updated_features.shape[-1])
+        remained_token_list = list(torch.split(remained_token, token_num.tolist()))
+
+        image_pad_token = torch.tensor(
+            [32000, 32001], dtype=torch.long, device=images_tensor.device
+        )
+        image_pad_embeds = self.model.llama_model.get_input_embeddings()(
+            image_pad_token
+        )
+        max_token_num = -1
+        for idx in range(batch_size):
+            remained_token_list[idx] = torch.cat(
+                [
+                    image_pad_embeds[:1],
+                    remained_token_list[idx],
+                    image_pad_embeds[1:],
+                ],
+                dim=0,
+            )
+            max_token_num = max(max_token_num, len(remained_token_list[idx]))
+
+        eos_id = self.model.llama_tokenizer.eos_token_id
+        eos_id = torch.tensor([eos_id], dtype=torch.long, device=images_tensor.device)
+        eos_embeds = self.model.llama_model.get_input_embeddings()(eos_id).unsqueeze(0)
+
+        image_attns = torch.zeros(
+            (batch_size, max_token_num),
+            dtype=torch.long,
+            device=images_tensor.device,
+        )
+        image_embeds = eos_embeds.repeat(batch_size, max_token_num, 1)
+        for idx in range(batch_size):
+            image_attns[idx, -len(remained_token_list[idx]) :] = 1
+            image_embeds[idx, -len(remained_token_list[idx]) :] = (
+                remained_token_list[idx]
+            )
+
+        return image_embeds, image_attns, keep_decision
+
+    def _prepare_embeds_with_last_keep(
+        self,
+        input_ids,
+        images_tensor,
+        image_sizes,
+    ) -> tuple[torch.Tensor, int]:
+        """Rebuild embeds while preserving the clean prefill's visual keep-mask."""
+        keep_decision = getattr(self, "_last_keep_decision", None)
+        if keep_decision is None:
+            return self._prepare_embeds(input_ids, images_tensor, image_sizes)
+
+        with self.model.maybe_autocast():
+            image_embeds, image_attns, _ = self._compute_dynamic_visual_embeds(
+                images_tensor, keep_decision=keep_decision
+            )
+            prompt_embeds = self.model.llama_model.get_input_embeddings()(input_ids)
+
+        prompt_attn = torch.ones(
+            input_ids.shape, dtype=torch.long, device=self._model_device
+        )
+        inputs_embeds, attention_mask = self.model.pad_input_embeds(
+            image_embeds, image_attns, prompt_embeds, prompt_attn
+        )
+        inputs_embeds = inputs_embeds.to(self._model_dtype)
+
+        n_img_total = int(image_attns.sum().item())
+        n_image_tokens = max(n_img_total - 2, 0)
+        self._last_attn_mask = attention_mask
         return inputs_embeds, n_image_tokens
 
     # ── _build_token_index ─────────────────────────────────────────────────────
