@@ -77,6 +77,29 @@ def _load_hook_manager(args: argparse.Namespace):
         model.eval()
         return VilaUHookManager(model, tokenizer, image_processor), tokenizer
 
+    if args.backend == "vilau_mlp":
+        import torch as _torch
+        _vilau = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
+        )
+        if _vilau not in sys.path:
+            sys.path.insert(0, _vilau)
+        from vila_u.model.builder import load_pretrained_model
+        from probe.training.train_vilau_mlp import SigLIPMLPAdapter
+        from probe.hooks.vilau_mlp import VilaUMLPHookManager
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, attn_implementation="eager",
+        )
+        model.eval()
+        _ckpt = getattr(args, "projector_ckpt", None)
+        if _ckpt and os.path.exists(_ckpt):
+            _state = _torch.load(_ckpt, map_location="cpu")
+            _adapter = SigLIPMLPAdapter(_state["siglip_dim"], _state["lm_dim"])
+            _adapter.load_state_dict(_state["adapter"])
+            _ref = next(model.llm.parameters())
+            model.mm_projector = _adapter.to(device=_ref.device, dtype=_ref.dtype).eval()
+        return VilaUMLPHookManager(model, tokenizer, image_processor), tokenizer
+
     if args.backend == "unitok":
         _unitok = os.path.normpath(
             os.path.join(os.path.dirname(__file__), "..", "..", "UniTok")
@@ -298,13 +321,189 @@ def _load_hook_manager(args: argparse.Namespace):
         )
         clip_dim = model.config.mm_hidden_size
         lm_dim = model.config.hidden_size
-        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
         if _ckpt and os.path.exists(_ckpt):
             state = _torch.load(_ckpt, map_location="cpu")
+            _cb = state["projector"]["codebook"]
+            vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim,
+                                        codebook_size=_cb.shape[0], code_dim=_cb.shape[1])
             vq_proj.load_state_dict(state["projector"])
+        else:
+            vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
         model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
         model.eval()
         return LlavaVQHookManager(model, tokenizer, image_processor), tokenizer
+
+    if args.backend == "llava_mlp":
+        import torch as _torch
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_mlp_projector import MLPProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        _ckpt = getattr(args, "projector_ckpt", None)
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        mlp_proj = MLPProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        if _ckpt and os.path.exists(_ckpt):
+            state = _torch.load(_ckpt, map_location="cpu")
+            mlp_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = mlp_proj.to(next(model.parameters()).device)
+        model.eval()
+        return LlavaVQHookManager(model, tokenizer, image_processor), tokenizer
+
+    if args.backend == "janus":
+        import torch as _torch
+        from transformers import AutoModelForCausalLM
+        from probe.hooks.janus import JanusProHookManager
+        # VLChatProcessor lives in the janus package (trust_remote_code)
+        try:
+            from janus.models import VLChatProcessor
+        except ImportError:
+            # Fallback: load from HuggingFace custom code
+            from transformers import AutoProcessor
+            VLChatProcessor = AutoProcessor
+        processor = VLChatProcessor.from_pretrained(args.model_path)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
+            trust_remote_code=True,
+            torch_dtype=_torch.bfloat16,
+            device_map="auto",
+        ).eval()
+        return JanusProHookManager(model, processor), processor.tokenizer
+
+    if args.backend == "qwen_vq":
+        import torch as _torch
+        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.training.train_qwen_vq import QwenVQMerger
+        from probe.hooks.qwen_vq import QwenVQHookManager
+        processor = AutoProcessor.from_pretrained(
+            args.model_path, trust_remote_code=True, padding_side="left"
+        )
+        processor.image_processor.max_pixels = 336 * 336
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            args.model_path, trust_remote_code=True,
+            torch_dtype=_torch.bfloat16, attn_implementation="eager",
+            device_map="auto",
+        ).eval()
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = _torch.load(ckpt_path, map_location="cpu")
+            vq_proj = VQLinearProjector(
+                clip_dim=state["clip_dim"], lm_dim=state["lm_dim"],
+                code_dim=state["code_dim"], codebook_size=state["codebook_size"],
+            )
+            vq_proj.load_state_dict(state["projector"])
+            model.visual.merger = QwenVQMerger(
+                model.visual.merger, vq_proj.to(next(model.parameters()).device)
+            )
+        model.eval()
+        return QwenVQHookManager(model, processor), processor.tokenizer
+
+    if args.backend == "chameleon":
+        import torch as _torch
+        from transformers import ChameleonForConditionalGeneration, ChameleonProcessor
+        from probe.hooks.chameleon_hf import ChameleonHFHookManager
+        processor = ChameleonProcessor.from_pretrained(args.model_path)
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=_torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        return ChameleonHFHookManager(model, processor), processor.tokenizer
+
+    if args.backend == "anole":
+        from probe.hooks.anole import AnoleHookManager
+        hm = AnoleHookManager.from_pretrained(args.model_path)
+        return hm, hm.processor.tokenizer
+
+    if args.backend == "llava_vq_fsq":
+        import torch as _torch
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_fsq_projector import FSQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        _ckpt = getattr(args, "projector_ckpt", None)
+        if _ckpt and os.path.exists(_ckpt):
+            ckpt_data = _torch.load(_ckpt, map_location="cpu")
+            levels = ckpt_data.get("fsq_levels", [8, 8, 8, 5, 5, 5])
+            fsq_proj = FSQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim, levels=levels)
+            fsq_proj.load_state_dict(ckpt_data["projector"])
+        else:
+            fsq_proj = FSQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+            print("[warn] no --projector_ckpt given — using untrained FSQ projector")
+        model.model.mm_projector = fsq_proj.to(next(model.parameters()).device)
+        model.eval()
+        return LlavaVQHookManager(model, tokenizer, image_processor), tokenizer
+
+    if args.backend == "lumina_mgpt":
+        import torch as _torch
+        _lumina_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "Lumina-mGPT")
+        )
+        _lumina_data = os.path.join(_lumina_root, "lumina_mgpt")
+        for _p in (_lumina_root, _lumina_data):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+        from lumina_mgpt.model.chameleon import ChameleonForConditionalGeneration
+        from lumina_mgpt.data.item_processor import FlexARItemProcessor
+        from probe.hooks.lumina_mgpt import LuminaMGPTHookManager
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=_torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        item_processor = FlexARItemProcessor(tokenizer=args.model_path, target_size=512)
+        return LuminaMGPTHookManager(model, item_processor), item_processor.tokenizer.tokenizer
+
+    if args.backend == "liquid":
+        import torch as _torch
+        _chameleon_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "chameleon")
+        )
+        _liquid_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "Liquid")
+        )
+        for _p in (_chameleon_root, _liquid_root):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        from chameleon.inference.image_tokenizer import ImageTokenizer
+        from probe.hooks.liquid import LiquidHookManager
+        tokenizer = AutoTokenizer.from_pretrained(args.model_path, padding_side="left")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path, torch_dtype=_torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        _vqgan_cfg = getattr(args, "tokenizer_path", None) or os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.yaml"
+        )
+        _vqgan_ckpt = getattr(args, "vq_path", None) or os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.ckpt"
+        )
+        image_tokenizer = ImageTokenizer(
+            cfg_path=_vqgan_cfg, ckpt_path=_vqgan_ckpt, device="cuda:0"
+        )
+        return LiquidHookManager(model, tokenizer, image_tokenizer), tokenizer
 
     raise ValueError(f"Unknown backend {args.backend!r}")
 
@@ -373,7 +572,7 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["llava", "vila", "vilau", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "seed", "gill", "showo", "llava_vq"],
+        choices=["llava", "vila", "vilau", "vilau_mlp", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "seed", "gill", "showo", "llava_vq", "llava_vq_fsq", "llava_mlp", "janus", "qwen_vq", "chameleon", "anole", "lumina_mgpt", "liquid"],
     )
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--tokenizer_path", default=None,
@@ -416,6 +615,18 @@ def main() -> None:
         "--vti_direction", default=None,
         help="[vti_textual] path to direction tensor (n_layers, hidden) from vti_calibrate.py",
     )
+    # Decoder-mode baselines (N-063): modify how logits are derived at inference time.
+    parser.add_argument(
+        "--decoder", default="standard",
+        choices=["standard", "vcd", "dola"],
+        help="standard: normal prefill logits.  "
+             "vcd: Visual Contrastive Decoding (Leng et al. CVPR 2024) — requires --decoder_sigma.  "
+             "dola: Decoding by Contrasting Layers (Chuang et al. ICLR 2024) — uses --decoder_early_layer.",
+    )
+    parser.add_argument("--decoder_sigma", type=float, default=40.0,
+                        help="[vcd] gaussian noise std-dev in pixel space (0–255 scale, default 40.0)")
+    parser.add_argument("--decoder_early_layer", type=int, default=None,
+                        help="[dola] premature layer index (default: n_layers // 2)")
     args = parser.parse_args()
 
     out_path = Path(args.out)
@@ -500,16 +711,26 @@ def main() -> None:
             "backend": args.backend,
             "model_path": args.model_path,
             "intervention_mode": args.knockout_mode,
+            "decoder": getattr(args, "decoder", "standard"),
             "knockout_layer": args.knockout_layer,
             "knockout_layer_end": args.knockout_layer_end,
             "heads": args.heads if args.knockout_mode in ("selective", "selective_scalar") else None,
             "alpha": args.alpha if args.knockout_mode in ("scalar", "selective_scalar", "vti_textual", "projector_scale") else None,
             "vti_direction": args.vti_direction if args.knockout_mode == "vti_textual" else None,
+            "decoder_sigma": getattr(args, "decoder_sigma", None) if getattr(args, "decoder", "standard") == "vcd" else None,
+            "decoder_early_layer": getattr(args, "decoder_early_layer", None) if getattr(args, "decoder", "standard") == "dola" else None,
             "n_records": len(rows),
             "metrics": metrics,
         }, indent=2) + "\n")
         print(f"Meta written to {meta_path}")
         return
+
+    # Prepare decoder-mode helpers (imported lazily to avoid loading in standard mode)
+    _decoder = getattr(args, "decoder", "standard")
+    _dola_early_layer = getattr(args, "decoder_early_layer", None)
+    if _decoder == "dola" and _dola_early_layer is None:
+        _dola_early_layer = len(hm._get_decoder_layers()) // 2
+        print(f"[dola] Using early_layer={_dola_early_layer} (n_layers // 2)")
 
     t_start = time.time()
     all_rows: list[dict] = []
@@ -518,13 +739,36 @@ def main() -> None:
         for i, rec in enumerate(todo, 1):
             t0 = time.time()
             img = Image.open(rec.image_path).convert("RGB")
-            if intervention is not None:
-                with intervention:
-                    cap = hm.run_prefill(img, rec.question)
-            else:
-                cap = hm.run_prefill(img, rec.question)
 
-            last_logits = cap.logits[cap.token_index.prompt_last].float()
+            if _decoder == "vcd":
+                from probe.baselines.vcd import make_noisy_image, vcd_logits
+                if intervention is not None:
+                    with intervention:
+                        cap = hm.run_prefill(img, rec.question)
+                else:
+                    cap = hm.run_prefill(img, rec.question)
+                noisy_img = make_noisy_image(img, sigma=args.decoder_sigma)
+                last_logits = vcd_logits(cap, hm, noisy_img, rec.question,
+                                         alpha=args.alpha,
+                                         force_ids=[yes_id, no_id])
+            elif _decoder == "dola":
+                from probe.baselines.dola import dola_logits
+                if intervention is not None:
+                    with intervention:
+                        cap = hm.run_prefill(img, rec.question)
+                else:
+                    cap = hm.run_prefill(img, rec.question)
+                last_logits = dola_logits(cap, hm, early_layer=_dola_early_layer,
+                                          alpha=args.alpha,
+                                          force_ids=[yes_id, no_id])
+            else:
+                if intervention is not None:
+                    with intervention:
+                        cap = hm.run_prefill(img, rec.question)
+                else:
+                    cap = hm.run_prefill(img, rec.question)
+                last_logits = cap.logits[cap.token_index.prompt_last].float()
+
             logit_yes = float(last_logits[yes_id])
             logit_no = float(last_logits[no_id])
             pred = "yes" if logit_yes > logit_no else "no"
@@ -579,6 +823,7 @@ def main() -> None:
     metrics = _score(args.bench, full_rows)
     print(json.dumps(metrics, indent=2))
 
+    _dec = getattr(args, "decoder", "standard")
     meta_path = out_path.with_suffix(".meta.json")
     meta_path.write_text(json.dumps({
         "bench": args.bench,
@@ -591,6 +836,10 @@ def main() -> None:
         "heads": args.heads if args.knockout_mode in ("selective", "selective_scalar") else None,
         "alpha": args.alpha if args.knockout_mode in ("scalar", "selective_scalar", "vti_textual") else None,
         "vti_direction": args.vti_direction if args.knockout_mode == "vti_textual" else None,
+        "decoder": _dec,
+        "decoder_alpha": args.alpha if _dec in ("vcd", "dola") else None,
+        "decoder_sigma": getattr(args, "decoder_sigma", None) if _dec == "vcd" else None,
+        "decoder_early_layer": getattr(args, "decoder_early_layer", None) if _dec == "dola" else None,
         "n_records": len(full_rows),
         "metrics": metrics,
     }, indent=2) + "\n")

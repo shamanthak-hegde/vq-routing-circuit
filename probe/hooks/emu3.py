@@ -190,6 +190,18 @@ class Emu3HookManager(VLMHookManager):
             image.thumbnail(
                 (self._max_image_size, self._max_image_size), Image.LANCZOS
             )
+        # Emu3 processor enforces aspect ratio < 5; pad short side if needed.
+        w, h = image.size
+        if w > 0 and h > 0 and max(w, h) / min(w, h) >= 4.9:
+            if w >= h:
+                new_h = int(w / 4.9) + 1
+                padded = Image.new("RGB", (w, new_h), (128, 128, 128))
+                padded.paste(image, (0, (new_h - h) // 2))
+            else:
+                new_w = int(h / 4.9) + 1
+                padded = Image.new("RGB", (new_w, h), (128, 128, 128))
+                padded.paste(image, ((new_w - w) // 2, 0))
+            image = padded
         inputs = self._processor(
             text=[question],
             image=[image],

@@ -112,6 +112,7 @@ def train(args: argparse.Namespace) -> None:
     from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 
     from probe.training.llava_vq_projector import VQLinearProjector
+    from probe.training.llava_vq_fsq_projector import FSQLinearProjector
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -134,20 +135,28 @@ def train(args: argparse.Namespace) -> None:
     print(f"Replacing mm_projector: clip_dim={clip_dim}, lm_dim={lm_dim}, "
           f"code_dim={args.code_dim}, K={args.codebook_size}")
 
-    vq_proj = VQLinearProjector(
-        clip_dim=clip_dim,
-        lm_dim=lm_dim,
-        code_dim=args.code_dim,
-        codebook_size=args.codebook_size,
-        commitment=args.commitment,
-        ema_decay=args.ema_decay,
-    )
-
-    if args.codebook_init and os.path.exists(args.codebook_init):
-        print(f"Loading k-means codebook from {args.codebook_init} ...")
-        vq_proj.load_kmeans_codebook(args.codebook_init)
+    if args.quantizer == "fsq":
+        fsq_levels = [int(v) for v in args.fsq_levels.split(",")]
+        vq_proj = FSQLinearProjector(
+            clip_dim=clip_dim,
+            lm_dim=lm_dim,
+            levels=fsq_levels,
+        )
+        print(f"Quantizer: FSQ  levels={fsq_levels}  n_codes={vq_proj.n_codes:,}")
     else:
-        print("Warning: no codebook_init provided — random codebook init (may collapse).")
+        vq_proj = VQLinearProjector(
+            clip_dim=clip_dim,
+            lm_dim=lm_dim,
+            code_dim=args.code_dim,
+            codebook_size=args.codebook_size,
+            commitment=args.commitment,
+            ema_decay=args.ema_decay,
+        )
+        if args.codebook_init and os.path.exists(args.codebook_init):
+            print(f"Loading k-means codebook from {args.codebook_init} ...")
+            vq_proj.load_kmeans_codebook(args.codebook_init)
+        else:
+            print("Warning: no codebook_init provided — random codebook init (may collapse).")
 
     model.model.mm_projector = vq_proj.to(device)
     model.model.mm_projector.requires_grad_(True)
@@ -321,15 +330,17 @@ def train(args: argparse.Namespace) -> None:
             # Checkpoint
             if step > 0 and step % args.save_every == 0:
                 ckpt_path = out_dir / f"step_{step:05d}.pt"
-                torch.save(
-                    {"step": step,
-                     "projector": model.model.mm_projector.state_dict(),
-                     "code_dim": args.code_dim,
-                     "codebook_size": args.codebook_size,
-                     "clip_dim": clip_dim,
-                     "lm_dim": lm_dim},
-                    ckpt_path,
-                )
+                ckpt = {"step": step,
+                        "projector": model.model.mm_projector.state_dict(),
+                        "quantizer": args.quantizer,
+                        "clip_dim": clip_dim,
+                        "lm_dim": lm_dim}
+                if args.quantizer == "fsq":
+                    ckpt["fsq_levels"] = fsq_levels
+                else:
+                    ckpt["code_dim"] = args.code_dim
+                    ckpt["codebook_size"] = args.codebook_size
+                torch.save(ckpt, ckpt_path)
                 print(f"Checkpoint → {ckpt_path}")
 
             step += 1
@@ -340,15 +351,17 @@ def train(args: argparse.Namespace) -> None:
 
     # ── Final checkpoint ──────────────────────────────────────────────────────
     final_path = out_dir / "projector_final.pt"
-    torch.save(
-        {"step": step,
-         "projector": model.model.mm_projector.state_dict(),
-         "code_dim": args.code_dim,
-         "codebook_size": args.codebook_size,
-         "clip_dim": clip_dim,
-         "lm_dim": lm_dim},
-        final_path,
-    )
+    final_ckpt = {"step": step,
+                  "projector": model.model.mm_projector.state_dict(),
+                  "quantizer": args.quantizer,
+                  "clip_dim": clip_dim,
+                  "lm_dim": lm_dim}
+    if args.quantizer == "fsq":
+        final_ckpt["fsq_levels"] = fsq_levels
+    else:
+        final_ckpt["code_dim"] = args.code_dim
+        final_ckpt["codebook_size"] = args.codebook_size
+    torch.save(final_ckpt, final_path)
     print(f"\nFinal checkpoint → {final_path}")
     print(f"Training complete. {step} steps, {time.time()-t_start:.0f}s.")
     if isinstance(image_src, zipfile.ZipFile):
@@ -365,6 +378,12 @@ def _main() -> None:
     parser.add_argument("--codebook_init", default=None,
                         help="Path to k-means codebook checkpoint (checkpoints/codebook_init.pt)")
     parser.add_argument("--out_dir", default="checkpoints/llava_vq")
+    parser.add_argument("--quantizer", default="vq", choices=["vq", "fsq"],
+                        help="Quantizer type: 'vq' (single-level EMA VQ, default) or "
+                             "'fsq' (Finite Scalar Quantization, collapse-proof)")
+    parser.add_argument("--fsq_levels", default="8,8,8,5,5,5",
+                        help="[fsq only] Comma-separated per-dim levels. "
+                             "Default '8,8,8,5,5,5' → 64 000 implicit codes.")
     parser.add_argument("--code_dim", type=int, default=32)
     parser.add_argument("--codebook_size", type=int, default=16384)
     parser.add_argument("--commitment", type=float, default=0.25)

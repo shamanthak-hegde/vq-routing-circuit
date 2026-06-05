@@ -53,7 +53,7 @@ _MODELS: dict[str, dict[str, Any]] = {
     "seed": {
         "sweep": "sweep_seed.jsonl",
         "accuracy": None,
-        "bench_pope_baseline": "bench_pope_seed_baseline.meta.json",
+        "bench_pope_baseline": "bench_pope_full_seed_baseline.meta.json",
         "bench_amber_baseline": None,
         "codebook_probe": None,
         "model_class": "vq",

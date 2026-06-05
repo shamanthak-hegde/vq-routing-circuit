@@ -82,7 +82,9 @@ def _main():
 
     parser = argparse.ArgumentParser(description="Calibrate sigma for POPE gaussian_noise")
     parser.add_argument("--backend", default="llava",
-                        choices=["llava", "llava_vq", "vilau", "vila", "unitok", "qwen3vl", "haplo", "emu3", "lavit", "showo", "seed", "gill"],
+                        choices=["llava", "llava_vq", "llava_vq_fsq", "llava_mlp", "vilau", "vila",
+                                 "unitok", "qwen3vl", "haplo", "emu3", "lavit", "showo", "seed",
+                                 "gill", "janus", "chameleon", "anole", "liquid", "lumina_mgpt"],
                         help="Model backend (default: llava)")
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
@@ -141,12 +143,39 @@ def _main():
         )
         clip_dim = model.config.mm_hidden_size
         lm_dim = model.config.hidden_size
-        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
         ckpt_path = getattr(args, "projector_ckpt", None)
         if ckpt_path and os.path.exists(ckpt_path):
             state = torch.load(ckpt_path, map_location="cpu")
+            _cb = state["projector"]["codebook"]
+            vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim,
+                                        codebook_size=_cb.shape[0], code_dim=_cb.shape[1])
             vq_proj.load_state_dict(state["projector"])
+        else:
+            vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
         model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor)
+    elif args.backend == "llava_mlp":
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_mlp_projector import MLPProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        mlp_proj = MLPProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            mlp_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = mlp_proj.to(next(model.parameters()).device)
         model.eval()
         hm = LlavaVQHookManager(model, tokenizer, image_processor)
     elif args.backend == "vilau":
@@ -321,6 +350,102 @@ def _main():
             sys.path.insert(0, _gill)
         from probe.hooks.gill import GillHookManager
         hm = GillHookManager(model_path=args.model_path)
+    elif args.backend == "janus":
+        from transformers import AutoModelForCausalLM
+        from probe.hooks.janus import JanusProHookManager
+        try:
+            from janus.models import VLChatProcessor
+        except ImportError:
+            from transformers import AutoProcessor as VLChatProcessor
+        processor = VLChatProcessor.from_pretrained(args.model_path)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        ).eval()
+        hm = JanusProHookManager(model, processor)
+    elif args.backend == "chameleon":
+        from transformers import ChameleonForConditionalGeneration, ChameleonProcessor
+        from probe.hooks.chameleon_hf import ChameleonHFHookManager
+        processor = ChameleonProcessor.from_pretrained(args.model_path)
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        hm = ChameleonHFHookManager(model, processor)
+    elif args.backend == "anole":
+        from probe.hooks.anole import AnoleHookManager
+        hm = AnoleHookManager.from_pretrained(args.model_path)
+    elif args.backend == "llava_vq_fsq":
+        _llava = os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_fsq_projector import FSQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        _ckpt = getattr(args, "projector_ckpt", None)
+        if _ckpt and os.path.exists(_ckpt):
+            ckpt_data = torch.load(_ckpt, map_location="cpu")
+            levels = ckpt_data.get("fsq_levels", [8, 8, 8, 5, 5, 5])
+            fsq_proj = FSQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim, levels=levels)
+            fsq_proj.load_state_dict(ckpt_data["projector"])
+        else:
+            fsq_proj = FSQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        model.model.mm_projector = fsq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor)
+    elif args.backend == "liquid":
+        _chameleon_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "chameleon")
+        )
+        _liquid_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "Liquid")
+        )
+        for _p in (_chameleon_root, _liquid_root):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        from chameleon.inference.image_tokenizer import ImageTokenizer
+        from probe.hooks.liquid import LiquidHookManager
+        tokenizer = AutoTokenizer.from_pretrained(args.model_path, padding_side="left")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        vqgan_cfg = args.tokenizer_path or os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.yaml"
+        )
+        vqgan_ckpt = args.vq_path or os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.ckpt"
+        )
+        image_tokenizer = ImageTokenizer(cfg_path=vqgan_cfg, ckpt_path=vqgan_ckpt, device="cuda:0")
+        hm = LiquidHookManager(model, tokenizer, image_tokenizer)
+    elif args.backend == "lumina_mgpt":
+        _lumina_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "Lumina-mGPT")
+        )
+        _lumina_data = os.path.join(_lumina_root, "lumina_mgpt")
+        for _p in (_lumina_root, _lumina_data):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+        from lumina_mgpt.model.chameleon import ChameleonForConditionalGeneration
+        from lumina_mgpt.data.item_processor import FlexARItemProcessor
+        from probe.hooks.lumina_mgpt import LuminaMGPTHookManager
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        item_processor = FlexARItemProcessor(tokenizer=args.model_path, target_size=512)
+        hm = LuminaMGPTHookManager(model, item_processor)
     else:  # vila
         _vila = os.path.join(os.path.dirname(__file__), "..", "..", "VILA")
         if _vila not in sys.path:

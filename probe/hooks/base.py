@@ -110,6 +110,14 @@ class VLMHookManager(ABC):
             answer_start=ans_start,
         )
 
+    def _extract_input_ids_for_capture(self, input_ids) -> "torch.Tensor":
+        """Extract a (seq,) CPU tensor from whatever _build_prompt returned.
+
+        Override for models (e.g. Janus) whose _build_prompt returns a
+        processor output object rather than a plain input_ids tensor.
+        """
+        return input_ids.squeeze(0).cpu()
+
     # ── Concrete run methods ──────────────────────────────────────────────────
 
     @torch.no_grad()
@@ -154,7 +162,7 @@ class VLMHookManager(ABC):
         visual_embeds = self._slice_visual(inputs_embeds, token_index)
 
         cap = Capture(
-            input_ids=input_ids.squeeze(0).cpu(),
+            input_ids=self._extract_input_ids_for_capture(input_ids),
             token_index=token_index,
             projected_visual=tensors["projected_visual"],
             visual_embeds=visual_embeds,
@@ -251,7 +259,7 @@ class VLMHookManager(ABC):
         )
 
         cap = Capture(
-            input_ids=input_ids.squeeze(0).cpu(),
+            input_ids=self._extract_input_ids_for_capture(input_ids),
             token_index=token_index,
             projected_visual=tensors["projected_visual"],
             visual_embeds=visual_embeds,

@@ -121,6 +121,7 @@ def _load_hm(
     tokenizer_path: Optional[str],
     projector_ckpt: Optional[str],
     vq_path: Optional[str],
+    codebook_size: int = 16384,
 ):
     """Load the appropriate hook manager. Mirrors calibrate.py dispatch."""
     if backend == "llava_vq":
@@ -139,7 +140,8 @@ def _load_hm(
         )
         clip_dim = model.config.mm_hidden_size
         lm_dim   = model.config.hidden_size
-        vq_proj  = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        vq_proj  = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim,
+                                     codebook_size=codebook_size)
         if projector_ckpt and os.path.exists(projector_ckpt):
             state = _torch.load(projector_ckpt, map_location="cpu")
             vq_proj.load_state_dict(state["projector"])
@@ -261,6 +263,64 @@ def _load_hm(
             attn_implementation="eager", trust_remote_code=True,
         ).eval()
         return Emu3HookManager(model, emu_tokenizer, image_processor, image_tokenizer)
+
+    elif backend == "chameleon":
+        import torch
+        from transformers import ChameleonForConditionalGeneration, ChameleonProcessor
+        from probe.hooks.chameleon_hf import ChameleonHFHookManager
+        processor = ChameleonProcessor.from_pretrained(model_path)
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        return ChameleonHFHookManager(model, processor)
+
+    elif backend == "liquid":
+        import os as _os, sys as _sys, torch
+        _chameleon_root = _os.path.normpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "chameleon")
+        )
+        _liquid_root = _os.path.normpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "Liquid")
+        )
+        for _p in (_chameleon_root, _liquid_root):
+            if _p not in _sys.path:
+                _sys.path.insert(0, _p)
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        from chameleon.inference.image_tokenizer import ImageTokenizer
+        from probe.hooks.liquid import LiquidHookManager
+        tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side="left")
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        vqgan_cfg = tokenizer_path or _os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.yaml"
+        )
+        vqgan_ckpt = vq_path or _os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.ckpt"
+        )
+        image_tokenizer = ImageTokenizer(cfg_path=vqgan_cfg, ckpt_path=vqgan_ckpt, device="cuda:0")
+        return LiquidHookManager(model, tokenizer, image_tokenizer)
+
+    elif backend == "lumina_mgpt":
+        import os as _os, sys as _sys, torch
+        _lumina_root = _os.path.normpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "Lumina-mGPT")
+        )
+        _lumina_data = _os.path.join(_lumina_root, "lumina_mgpt")
+        for _p in (_lumina_root, _lumina_data):
+            if _p not in _sys.path:
+                _sys.path.insert(0, _p)
+        from lumina_mgpt.model.chameleon import ChameleonForConditionalGeneration
+        from lumina_mgpt.data.item_processor import FlexARItemProcessor
+        from probe.hooks.lumina_mgpt import LuminaMGPTHookManager
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        item_processor = FlexARItemProcessor(tokenizer=model_path, target_size=512)
+        return LuminaMGPTHookManager(model, item_processor)
 
     else:
         raise ValueError(f"Unknown backend: {backend!r}")
@@ -390,12 +450,15 @@ def print_report(rows: list[dict]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--backend", default="llava_vq",
-                    choices=["llava_vq", "vilau", "unitok", "seed", "showo", "emu3"])
+                    choices=["llava_vq", "vilau", "unitok", "seed", "showo", "emu3",
+                             "chameleon", "liquid", "lumina_mgpt"])
     ap.add_argument("--model_path", default=None)
     ap.add_argument("--tokenizer_path", default=None,
                     help="[unitok] Path to unitok_tokenizer.pth")
     ap.add_argument("--projector_ckpt", default=None,
                     help="[llava_vq] Path to VQLinearProjector checkpoint")
+    ap.add_argument("--codebook_size", type=int, default=16384,
+                    help="[llava_vq] Codebook size K (default 16384)")
     ap.add_argument("--vq_path", default=None,
                     help="[showo/emu3] HF ID or path to VQ tokenizer")
     ap.add_argument("--sweep", required=False, default=None,
@@ -442,7 +505,8 @@ def main() -> None:
 
     print(f"Loading {args.backend} model ...")
     hm = _load_hm(args.backend, args.model_path,
-                  args.tokenizer_path, args.projector_ckpt, args.vq_path)
+                  args.tokenizer_path, args.projector_ckpt, args.vq_path,
+                  codebook_size=args.codebook_size)
 
     run_probe(hm, target_records, pool_records,
               sigma=args.sigma, backend=args.backend, out_path=out_path)

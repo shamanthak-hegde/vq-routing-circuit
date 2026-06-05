@@ -59,10 +59,13 @@ from PIL import Image
 
 
 def _default_target_window(backend: str, n_layers: int) -> tuple[int, int]:
-    if backend in ("vilau", "llava_vq", "emu3"):
+    if backend in ("vilau", "vilau_mlp", "llava_vq", "llava_vq_fsq", "llava_mlp", "emu3",
+                   "qwen_vq", "chameleon", "liquid"):
         return (0, min(8, n_layers))
     if backend == "showo":
         return (min(4, n_layers), min(8, n_layers))
+    if backend == "janus":
+        return (0, min(8, n_layers))
     return (min(12, n_layers), min(14, n_layers))
 
 
@@ -89,8 +92,10 @@ def _load_target_ids(records_from: Path) -> list[str]:
     return target_ids
 
 
-def _fallback_non_warn_ids(backend: str, source: str = "pope") -> list[str]:
-    sweep_path = Path(f"results/sweep_{backend}.jsonl")
+def _fallback_non_warn_ids(backend: str, source: str = "pope",
+                            sweep_path: Path | None = None) -> list[str]:
+    if sweep_path is None:
+        sweep_path = Path(f"results/sweep_{backend}.jsonl")
     if not sweep_path.exists():
         print(f"Warning: {sweep_path} not found; will use first {source} records.")
         return []
@@ -114,7 +119,7 @@ def _fallback_non_warn_ids(backend: str, source: str = "pope") -> list[str]:
 
 
 def _load_records(tokenizer, backend: str, records_from: Path, n_records: int,
-                  source: str = "pope") -> list:
+                  source: str = "pope", sweep_path: Path | None = None) -> list:
     from probe import load_cache, resolve_answer_token_ids
 
     records, _, _ = load_cache()
@@ -138,7 +143,7 @@ def _load_records(tokenizer, backend: str, records_from: Path, n_records: int,
             target_ids = []
 
     if not target_ids:
-        target_ids = _fallback_non_warn_ids(backend, source=source)
+        target_ids = _fallback_non_warn_ids(backend, source=source, sweep_path=sweep_path)
         todo = _filter_by_ids(target_ids) if target_ids else [r for r in records if src_filter(r)]
 
     return todo[:n_records]
@@ -165,16 +170,113 @@ def _load_hook_manager(args: argparse.Namespace):
         )
         clip_dim = model.config.mm_hidden_size
         lm_dim = model.config.hidden_size
-        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
         ckpt_path = getattr(args, "projector_ckpt", None)
+        K = 16384
         if ckpt_path and os.path.exists(ckpt_path):
             state = torch.load(ckpt_path, map_location="cpu")
+            K = state["projector"]["codebook"].shape[0]
+        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim, K=K)
+        if ckpt_path and os.path.exists(ckpt_path):
             vq_proj.load_state_dict(state["projector"])
         model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
         model.eval()
         hm = LlavaVQHookManager(model, tokenizer, image_processor,
                                  capture_attention_weights=True)
         return hm, tokenizer
+
+    if args.backend == "llava_vq_fsq":
+        import torch
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_fsq_projector import FSQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="eager",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            ckpt_data = torch.load(ckpt_path, map_location="cpu")
+            levels = ckpt_data.get("fsq_levels", [8, 8, 8, 5, 5, 5])
+            fsq_proj = FSQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim, levels=levels)
+            fsq_proj.load_state_dict(ckpt_data["projector"])
+        else:
+            fsq_proj = FSQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        model.model.mm_projector = fsq_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor,
+                                 capture_attention_weights=True)
+        return hm, tokenizer
+
+    if args.backend == "llava_mlp":
+        import torch
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_mlp_projector import MLPProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="eager",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        mlp_proj = MLPProjector(clip_dim=clip_dim, lm_dim=lm_dim)
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            mlp_proj.load_state_dict(state["projector"])
+        model.model.mm_projector = mlp_proj.to(next(model.parameters()).device)
+        model.eval()
+        hm = LlavaVQHookManager(model, tokenizer, image_processor,
+                                 capture_attention_weights=True)
+        return hm, tokenizer
+
+    if args.backend == "qwen_vq":
+        import torch
+        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.training.train_qwen_vq import QwenVQMerger
+        from probe.hooks.qwen_vq import QwenVQHookManager
+
+        processor = AutoProcessor.from_pretrained(
+            args.model_path, trust_remote_code=True, padding_side="left"
+        )
+        processor.image_processor.max_pixels = 336 * 336
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            args.model_path, trust_remote_code=True,
+            torch_dtype=torch.bfloat16, attn_implementation="eager",
+            device_map="auto",
+        ).eval()
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            vq_proj = VQLinearProjector(
+                clip_dim=state["clip_dim"], lm_dim=state["lm_dim"],
+                code_dim=state["code_dim"], codebook_size=state["codebook_size"],
+            )
+            vq_proj.load_state_dict(state["projector"])
+            model.visual.merger = QwenVQMerger(
+                model.visual.merger, vq_proj.to(next(model.parameters()).device)
+            )
+        model.eval()
+        hm = QwenVQHookManager(model, processor, capture_attention_weights=True)
+        return hm, processor.tokenizer
 
     if args.backend == "vilau":
         _vilau = os.path.normpath(
@@ -193,6 +295,32 @@ def _load_hook_manager(args: argparse.Namespace):
         hm = VilaUHookManager(
             model, tokenizer, image_processor, capture_attention_weights=True
         )
+        return hm, tokenizer
+
+    if args.backend == "vilau_mlp":
+        import torch
+        _vilau = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "vila-u")
+        )
+        if _vilau not in sys.path:
+            sys.path.insert(0, _vilau)
+        from vila_u.model.builder import load_pretrained_model
+        from probe.training.train_vilau_mlp import SigLIPMLPAdapter
+        from probe.hooks.vilau_mlp import VilaUMLPHookManager
+
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, attn_implementation="eager",
+        )
+        model.eval()
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+            adapter = SigLIPMLPAdapter(ckpt["siglip_dim"], ckpt["lm_dim"])
+            adapter.load_state_dict(ckpt["adapter"])
+            _ref = next(model.llm.parameters())
+            model.mm_projector = adapter.to(device=_ref.device, dtype=_ref.dtype).eval()
+        hm = VilaUMLPHookManager(model, tokenizer, image_processor,
+                                  capture_attention_weights=True)
         return hm, tokenizer
 
     if args.backend == "unitok":
@@ -237,6 +365,24 @@ def _load_hook_manager(args: argparse.Namespace):
         )
         return hm, tokenizer
 
+    if args.backend == "janus":
+        import torch
+        from transformers import AutoModelForCausalLM
+        from probe.hooks.janus import JanusProHookManager
+        try:
+            from janus.models import VLChatProcessor
+        except ImportError:
+            from transformers import AutoProcessor as VLChatProcessor
+        processor = VLChatProcessor.from_pretrained(args.model_path)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        ).eval()
+        hm = JanusProHookManager(model, processor, capture_attention_weights=True)
+        return hm, processor.tokenizer
+
     if args.backend == "emu3":
         import torch
         if getattr(args, "vq_path", None) is None:
@@ -260,6 +406,74 @@ def _load_hook_manager(args: argparse.Namespace):
         hm = Emu3HookManager(model, tokenizer, image_processor, image_tokenizer,
                              max_image_size=getattr(args, "max_image_size", 128),
                              capture_attention_weights=True)
+        return hm, tokenizer
+
+    if args.backend == "chameleon":
+        import torch
+        from transformers import ChameleonForConditionalGeneration, ChameleonProcessor
+        from probe.hooks.chameleon_hf import ChameleonHFHookManager
+        processor = ChameleonProcessor.from_pretrained(args.model_path)
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        hm = ChameleonHFHookManager(model, processor, capture_attention_weights=True)
+        return hm, processor.tokenizer
+
+    if args.backend == "anole":
+        from probe.hooks.anole import AnoleHookManager
+        hm = AnoleHookManager.from_pretrained(args.model_path, capture_attention_weights=True)
+        return hm, hm.processor.tokenizer
+
+    if args.backend == "lumina_mgpt":
+        import os as _os, sys as _sys, torch
+        _lumina_root = _os.path.normpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "Lumina-mGPT")
+        )
+        _lumina_data = _os.path.join(_lumina_root, "lumina_mgpt")
+        for _p in (_lumina_root, _lumina_data):
+            if _p not in _sys.path:
+                _sys.path.insert(0, _p)
+        from lumina_mgpt.model.chameleon import ChameleonForConditionalGeneration
+        from lumina_mgpt.data.item_processor import FlexARItemProcessor
+        from probe.hooks.lumina_mgpt import LuminaMGPTHookManager
+        model = ChameleonForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        item_processor = FlexARItemProcessor(tokenizer=args.model_path, target_size=512)
+        hm = LuminaMGPTHookManager(model, item_processor, capture_attention_weights=True)
+        tokenizer = item_processor.tokenizer.tokenizer
+        return hm, tokenizer
+
+    if args.backend == "liquid":
+        import os as _os, sys as _sys, torch
+        _chameleon_root = _os.path.normpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "chameleon")
+        )
+        _liquid_root = _os.path.normpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "Liquid")
+        )
+        for _p in (_chameleon_root, _liquid_root):
+            if _p not in _sys.path:
+                _sys.path.insert(0, _p)
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        from chameleon.inference.image_tokenizer import ImageTokenizer
+        from probe.hooks.liquid import LiquidHookManager
+        tokenizer = AutoTokenizer.from_pretrained(args.model_path, padding_side="left")
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16,
+            attn_implementation="eager", device_map="cuda",
+        ).eval()
+        vqgan_cfg = getattr(args, "tokenizer_path", None) or _os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.yaml"
+        )
+        vqgan_ckpt = getattr(args, "vq_path", None) or _os.path.join(
+            _chameleon_root, "data", "tokenizer", "vqgan.ckpt"
+        )
+        image_tokenizer = ImageTokenizer(cfg_path=vqgan_cfg, ckpt_path=vqgan_ckpt, device="cuda:0")
+        hm = LiquidHookManager(model, tokenizer, image_tokenizer,
+                               capture_attention_weights=True)
         return hm, tokenizer
 
     # showo
@@ -500,7 +714,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Per-head visual-to-prompt_last attention weights (N-038, N-043)"
     )
-    parser.add_argument("--backend", required=True, choices=["vilau", "unitok", "showo", "llava_vq", "emu3"])
+    parser.add_argument("--backend", required=True, choices=["vilau", "vilau_mlp", "unitok", "showo", "llava_vq", "llava_vq_fsq", "llava_mlp", "emu3", "janus", "qwen_vq", "chameleon", "anole", "liquid", "lumina_mgpt"])
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
@@ -516,6 +730,10 @@ def main() -> None:
                         default=None,
                         help="JSONL file providing record_id values "
                              "(default: results/codebook_probe_<backend>.jsonl)")
+    parser.add_argument("--sweep_path",
+                        default=None,
+                        help="Override sweep JSONL used for non-WARN fallback filtering "
+                             "(default: results/sweep_<backend>.jsonl)")
     parser.add_argument("--n_records", type=int, default=20)
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--out", default=None,
@@ -554,6 +772,7 @@ def main() -> None:
         records_from=Path(args.records_from),
         n_records=args.n_records,
         source=args.source,
+        sweep_path=Path(args.sweep_path) if args.sweep_path else None,
     )
     print(f"Records to measure: {len(records)}")
     if not records:

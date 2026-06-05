@@ -83,6 +83,11 @@ class VQLinearProjector(nn.Module):
         (B, N, lm_dim)  — projected embeddings for the LM, same dtype as input
         """
         orig_dtype = x.dtype
+        # Qwen's visual.merger passes (N_total, C); LLaVA passes (B, N, C).
+        # Normalise to 3-D for the rest of the forward, then restore on exit.
+        squeeze_batch = x.ndim == 2
+        if squeeze_batch:
+            x = x.unsqueeze(0)          # (1, N_total, C)
         B, N, _ = x.shape
 
         # Run all projector arithmetic in float32 so Linear weights (fp32 by
@@ -146,7 +151,10 @@ class VQLinearProjector(nn.Module):
 
         # Project to LM hidden dim; cast to original dtype (fp16) for the LM
         out = self.up(quant_z)                                  # (B, N, lm_dim) float32
-        return out.to(orig_dtype)
+        out = out.to(orig_dtype)
+        if squeeze_batch:
+            out = out.squeeze(0)        # (N_total, lm_dim)
+        return out
 
     # ── EMA update ────────────────────────────────────────────────────────────
 
