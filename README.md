@@ -166,3 +166,13 @@ python -m probe.hooks.test_hooks --model_path ...   # full, needs GPU
 ```
 
 There are per-model test modules alongside it for the other backends.
+
+## License
+
+The code is MIT licensed; see LICENSE. Use it for research or anything else.
+
+The images under `micro_benchmark/images/` are not ours to relicense. They come
+from NaturalBench, POPE, and HallusionBench, and the POPE and NaturalBench
+subsets ultimately derive from COCO. Those keep their upstream terms, so check
+the original datasets before redistributing the images. The MIT grant covers the
+code and the benchmark construction, not the underlying image data.
