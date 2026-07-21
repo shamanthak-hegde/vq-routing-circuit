@@ -1,5 +1,5 @@
 """
-K-means codebook initialisation for VQLinearProjector (N-056).
+K-means codebook initialisation for VQLinearProjector.
 
 Runs a single k-means pass on CLIP features from a sample of LLaVA-Pretrain
 images to initialise the VQ codebook before STE training.  Random init leads

@@ -152,7 +152,16 @@ class VilaUHookManager(VLMHookManager):
         A fresh conversation list is built each call because extract_media
         mutates message["value"] in-place.
         """
-        conversation = [{"from": "human", "value": [image, question]}]
+        prior = getattr(self, "_followup_prior", None)
+        if prior:
+            pq, pa = prior
+            conversation = [
+                {"from": "human", "value": [image, pq]},
+                {"from": "gpt", "value": pa},
+                {"from": "human", "value": question},
+            ]
+        else:
+            conversation = [{"from": "human", "value": [image, question]}]
         media = self._extract_media(conversation, self.model.config)
         # conversation[0]["value"] is now "<image>\nquestion" (string)
 

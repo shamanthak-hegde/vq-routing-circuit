@@ -2,7 +2,7 @@
 set -e
 # module load mamba;
 # source activate sae
-cd /scratch/shegde23/unified_mech
+cd "$(dirname "$0")/.."
 
 python -m probe.training.kmeans_init \
     --data_json data/llava_pretrain/subset_50k.json \

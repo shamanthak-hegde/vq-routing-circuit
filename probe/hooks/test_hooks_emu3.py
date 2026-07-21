@@ -7,7 +7,7 @@ asserts all structural invariants, and prints timing / memory reports.
 Usage (requires GPU):
     source activate emu
     module load cuda-12.4.1-gcc-12.1.0
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_emu3 \\
         --model_path BAAI/Emu3-Chat \\
         --vq_path BAAI/Emu3-VisionTokenizer

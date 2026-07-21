@@ -113,14 +113,25 @@ class JanusProHookManager(VLMHookManager):
         (input_ids, images_tensor, image_sizes) triple.  _prepare_embeds and
         _call_generate both accept this form.
         """
-        conversation = [
-            {
-                "role": "<|User|>",
-                "content": f"<image_placeholder>\n{question}",
-                "images": [image],
-            },
-            {"role": "<|Assistant|>", "content": ""},
-        ]
+        prior = getattr(self, "_followup_prior", None)
+        if prior:
+            pq, pa = prior
+            conversation = [
+                {"role": "<|User|>", "content": f"<image_placeholder>\n{pq}",
+                 "images": [image]},
+                {"role": "<|Assistant|>", "content": pa},
+                {"role": "<|User|>", "content": question},
+                {"role": "<|Assistant|>", "content": ""},
+            ]
+        else:
+            conversation = [
+                {
+                    "role": "<|User|>",
+                    "content": f"<image_placeholder>\n{question}",
+                    "images": [image],
+                },
+                {"role": "<|Assistant|>", "content": ""},
+            ]
         prepare_inputs = self.processor(
             conversations=conversation,
             images=[image],

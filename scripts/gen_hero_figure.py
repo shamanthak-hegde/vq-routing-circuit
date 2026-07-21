@@ -333,7 +333,7 @@ def draw_gate_grid(ax):
 # PANEL C — CHAIRi dissociation on VILA-U
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Data from R-087 (baseline + L0) and R-094 (tuned VCD + DoLA)
+# Data from the baseline, L0, and tuned-baseline runs
 CHAIR_DATA = {
     "Baseline":    10.3,
     "L0\nablation":  7.1,
@@ -398,7 +398,7 @@ def draw_chair_bars(ax):
         fontsize=9.5, pad=5, fontweight="bold")
 
     # # source note
-    # ax.text(3.72, 0.25, "R-087, R-094",
+    # ax.text(3.72, 0.25, ",",
     #         ha="right", fontsize=6.0, color="#aaaaaa")
 
 

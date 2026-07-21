@@ -1,5 +1,5 @@
 """
-Download LLaVA-Pretrain-558K and create a 50k-entry subset (N-056).
+Download LLaVA-Pretrain-558K and create a 50k-entry subset.
 
 LLaVA-Pretrain-558K (liuhaotian/LLaVA-Pretrain) contains:
   - blip_laion_cc_sbu_558k.json  — list of {id, image, conversations}

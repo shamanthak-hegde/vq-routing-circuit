@@ -1,5 +1,5 @@
 """
-VilaUMLPHookManager — hook manager for VILA-U with continuous SigLIP adapter (N-069).
+VilaUMLPHookManager — hook manager for VILA-U with continuous SigLIP adapter.
 
 Extends VilaUHookManager.  The mm_projector has been replaced by a
 SigLIPMLPAdapter (continuous, no VQ quantization).  Additionally, the

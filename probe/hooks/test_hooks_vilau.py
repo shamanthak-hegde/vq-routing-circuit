@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage:
     source activate sae
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_vilau --model_path mit-han-lab/vila-u-7b-256
 
 Mirrors test_hooks.py but targets VILA-U:

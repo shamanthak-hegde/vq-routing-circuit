@@ -1,4 +1,4 @@
-"""Per-model best visual restoration window from sweep JSONL (N-054).
+"""Per-model best visual restoration window from sweep JSONL.
 
 Given a sweep_<backend>.jsonl produced by run_sweep.py, find the stride-4 window
 [layer_start, layer_end) with the highest mean visual restoration score (NB + POPE
@@ -52,7 +52,7 @@ _BACKENDS = ["vilau", "llava", "unitok", "qwen3vl", "showo", "seed"]
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Print best visual window from sweep JSONL (N-054)"
+        description="Print best visual window from sweep JSONL"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--backend", choices=_BACKENDS)

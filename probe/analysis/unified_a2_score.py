@@ -1,5 +1,5 @@
 """Evaluate whether a single continuous score can cleanly replace the two-tier
-gate-A.2 rule (D-043) for separating pathological from non-pathological VLMs.
+gate-A.2 rule for separating pathological from non-pathological VLMs.
 
 Three candidate measures are computed from attn_head_weights_*.json files:
   1. L0_mass       — sum of per-head visual→prompt_last weights at layer 0
@@ -23,7 +23,7 @@ import os
 from pathlib import Path
 
 
-# Ground-truth verdicts from D-033 / D-043 / project log.
+# Ground-truth verdicts / project log.
 # Key: backend name matching attn_head_weights_{backend}.json
 # Value: ("PASS"/"FAIL", tier, notes)
 VERDICTS: dict[str, tuple[str, str, str]] = {
@@ -34,10 +34,10 @@ VERDICTS: dict[str, tuple[str, str, str]] = {
     "llava_vq":      ("PASS", "projector-amplified",  "induced specimen v1, K=16384"),
     "llava_vq_v2":   ("PASS", "projector-amplified",  "induced specimen v2, K=16384, entropy reg"),
     # Fail models
-    "emu3":          ("FAIL", "unified-vocab",         "L0 mass=12.5 < 15; no behavioral circuit (R-042)"),
-    "janus":         ("FAIL", "decoupled",             "continuous SigLIP path; no VQ bias (D-032 corrected)"),
-    "unitok":        ("FAIL", "projector-amplified",   "MLP-diffusion divergence, not routing (R-030)"),
-    "qwen_vq":       ("FAIL", "projector-amplified",   "VQ collapse present; L0 circuit absent (R-059)"),
+    "emu3":          ("FAIL", "unified-vocab",         "L0 mass=12.5 < 15; no behavioral circuit"),
+    "janus":         ("FAIL", "decoupled",             "continuous SigLIP path; no VQ bias (corrected)"),
+    "unitok":        ("FAIL", "projector-amplified",   "MLP-diffusion divergence, not routing"),
+    "qwen_vq":       ("FAIL", "projector-amplified",   "VQ collapse present; L0 circuit absent"),
     "vilau_mlp":     ("FAIL", "projector-amplified",   "reverse ablation; continuous adapter worsens pathology"),
 }
 
@@ -149,11 +149,11 @@ def main(results_dir: str = "results", out_tsv: str = "results/unified_a2_summar
     for r in known:
         if r["verdict"] == "PASS" and r["L0_mass"] < 15:
             print(f"  PASS model {r['backend']} has L0_mass={r['L0_mass']:.2f} < 15 "
-                  f"→ would be misclassified by L0 threshold alone (resolved by D-043 two-tier)")
+                  f"→ would be misclassified by L0 threshold alone (resolved by the two-tier rule)")
         if r["verdict"] == "FAIL" and r["window_mass_0_8"] > 19:
             print(f"  FAIL model {r['backend']} has [0,8)={r['window_mass_0_8']:.2f} > 19 "
                   f"→ would be misclassified by window threshold alone")
-    print("Decision: use D-043 two-tier rule derived from architectural first principles (σ_cal).")
+    print("Decision: use the two-tier rule derived from architectural first principles (σ_cal).")
 
     # Write TSV
     keys = ["backend", "verdict", "tier", "L0_mass", "window_mass_0_8", "total_mass",

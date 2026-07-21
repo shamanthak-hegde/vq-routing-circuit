@@ -111,10 +111,17 @@ class LlavaHookManager(VLMHookManager):
         self, image: Image.Image, question: str
     ) -> tuple:
         """Tokenize image+question → (input_ids, images_tensor, image_sizes)."""
-        qs = self._image_placeholder + "\n" + question
         conv = self._conv_templates[self.conv_mode].copy()
-        conv.append_message(conv.roles[0], qs)
-        conv.append_message(conv.roles[1], None)
+        prior = getattr(self, "_followup_prior", None)
+        if prior:
+            pq, pa = prior
+            conv.append_message(conv.roles[0], self._image_placeholder + "\n" + pq)
+            conv.append_message(conv.roles[1], pa)
+            conv.append_message(conv.roles[0], question)
+            conv.append_message(conv.roles[1], None)
+        else:
+            conv.append_message(conv.roles[0], self._image_placeholder + "\n" + question)
+            conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
 
         input_ids = (

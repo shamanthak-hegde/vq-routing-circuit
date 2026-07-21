@@ -1,11 +1,11 @@
 """
-Reverse ablation: VILA-U with continuous SigLIP adapter (N-069).
+Reverse ablation: VILA-U with continuous SigLIP adapter.
 
 Replaces VILA-U's VQ projector (RQVAE → mm_projector) with a continuous
 SigLIP MLP adapter that bypasses the RQVAE quantization step entirely.
 Freezes the VILA-U LLM and SigLIP encoder; trains only the new MLP adapter.
 
-This is the REVERSE of LLaVA-VQ (N-056):
+This is the REVERSE of LLaVA-VQ:
   LLaVA + VQ projector → pathology appears        (constructive induction)
   VILA-U + continuous adapter → pathology should disappear  (reverse ablation)
 
@@ -363,7 +363,7 @@ def train(args: argparse.Namespace) -> None:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(
-        description="VILA-U reverse ablation: continuous SigLIP adapter (N-069)"
+        description="VILA-U reverse ablation: continuous SigLIP adapter"
     )
     parser.add_argument("--model_path", default="mit-han-lab/vila-u-7b-256")
     parser.add_argument("--data_json", required=True)

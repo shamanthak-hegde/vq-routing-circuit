@@ -1,4 +1,4 @@
-"""Codebook entry yes-bias analysis for VQ-VLM backends (N-069/N-078).
+"""Codebook entry yes-bias analysis for VQ-VLM backends.
 
 For each active codebook entry, measures what fraction of POPE prefills where
 that entry appears in the visual tokens predict "yes".
@@ -240,22 +240,60 @@ def _load_hm(args):
         )
         return LiquidHookManager(model, tokenizer, image_tokenizer)
 
+    elif backend == "llava_vq":
+        import torch
+        _llava = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "LLaVA")
+        )
+        if _llava not in sys.path:
+            sys.path.insert(0, _llava)
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.hooks.llava_vq import LlavaVQHookManager
+        print(f"Loading llava_vq {args.model_path} "
+              f"(K={args.codebook_size}, ckpt={args.projector_ckpt}) ...")
+        model_name = get_model_name_from_path(args.model_path)
+        tokenizer, model, image_processor, _ = load_pretrained_model(
+            args.model_path, model_base=None, model_name=model_name,
+            attn_implementation="sdpa",
+        )
+        clip_dim = model.config.mm_hidden_size
+        lm_dim = model.config.hidden_size
+        vq_proj = VQLinearProjector(
+            clip_dim=clip_dim, lm_dim=lm_dim,
+            codebook_size=args.codebook_size,
+        )
+        if args.projector_ckpt and os.path.exists(args.projector_ckpt):
+            state = torch.load(args.projector_ckpt, map_location="cpu")
+            vq_proj.load_state_dict(state["projector"])
+        else:
+            raise FileNotFoundError(
+                f"projector_ckpt not found: {args.projector_ckpt!r}")
+        model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
+        model.eval()
+        return LlavaVQHookManager(model, tokenizer, image_processor)
+
     else:
         raise ValueError(f"Unknown backend: {backend!r}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Codebook entry yes-bias analysis (N-069/N-078)"
+        description="Codebook entry yes-bias analysis"
     )
     parser.add_argument("--backend", default="vilau",
-                        choices=["vilau", "chameleon", "liquid"],
+                        choices=["vilau", "chameleon", "liquid", "llava_vq"],
                         help="VLM backend to analyse")
     parser.add_argument("--model_path", default="mit-han-lab/vila-u-7b-256")
     parser.add_argument("--tokenizer_path", default=None,
                         help="(liquid only) path to vqgan.yaml")
     parser.add_argument("--vq_path", default=None,
                         help="(liquid only) path to vqgan.ckpt")
+    parser.add_argument("--projector_ckpt", default=None,
+                        help="(llava_vq only) path to trained VQLinearProjector checkpoint")
+    parser.add_argument("--codebook_size", type=int, default=16384,
+                        help="(llava_vq only) codebook size K of the trained projector")
     parser.add_argument("--n_records", type=int, default=500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", required=True, help="Output JSON path")

@@ -1,4 +1,4 @@
-"""Summarize VTI demo-seed variance across multiple seeds (N-083 sub-task 4B).
+"""Summarize VTI demo-seed variance across multiple seeds.
 
 For each seed, computes paired-record Δacc and ΔF1 vs baseline, plus
 per-seed paired-record bootstrap CI. Final table reports:
@@ -46,7 +46,7 @@ def main(results_dir: str = "results", out_tsv: str = "results/vti_seed_summary.
 
     if not seeds:
         print(f"No vti seed bench files found in {results_dir}. "
-              f"Run scripts/run_n083_vti_seeds.sh first.")
+              f"Run scripts/run_vti_seed_variance.sh first.")
         return
 
     base_pope = rd / "bench_pope_full_vilau_baseline.jsonl"
@@ -107,7 +107,7 @@ def main(results_dir: str = "results", out_tsv: str = "results/vti_seed_summary.
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description="VTI demo-seed summary (N-083)")
+    parser = argparse.ArgumentParser(description="VTI demo-seed summary")
     parser.add_argument("--results_dir", default="results")
     parser.add_argument("--out", default="results/vti_seed_summary.tsv")
     parser.add_argument("--n_boot", type=int, default=5000)

@@ -1,5 +1,5 @@
 """
-QwenVQHookManager — hook manager for Qwen2.5-VL with VQLinearProjector (N-068).
+QwenVQHookManager — hook manager for Qwen2.5-VL with VQLinearProjector.
 
 Extends Qwen3VLHookManager.  The only change from stock Qwen2.5-VL is that
 model.visual.merger has been replaced by a VQLinearProjector.  All forward-pass

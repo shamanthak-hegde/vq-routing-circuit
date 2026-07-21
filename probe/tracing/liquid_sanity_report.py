@@ -333,7 +333,7 @@ def build_report(model: str, fig_dir: Path) -> str:
         lines.append("")
         lines.append(
             "All 20 L0 outputs are empty strings after `skip_special_tokens=True`. "
-            "Raw token-ID inspection (see handoff §3) shows the model emits token "
+            "Raw token-ID inspection shows the model emits token "
             "108 (`\\n`) repeatedly under L0 ablation — pure whitespace, not even "
             "the literal token 'no'. The argmax over (yes_id, no_id) reads 'no' "
             "only because the *gap* (logit_yes − logit_no) is slightly negative; "

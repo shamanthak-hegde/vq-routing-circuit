@@ -1,6 +1,6 @@
 '''
 Vendored from OPERA/chair.py (originally https://github.com/LisaAnne/Hallucination).
-Modified for this repo (N-076):
+Modified for this repo:
   - get_annotations_from_segments / get_annotations_from_captions load val2014 only
     (train annotations are not required)
   - coco_ann_info alias added for post-init verification

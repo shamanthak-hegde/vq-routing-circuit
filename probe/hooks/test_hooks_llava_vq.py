@@ -1,5 +1,5 @@
 """
-Smoke test for LlavaVQHookManager (N-056).
+Smoke test for LlavaVQHookManager.
 
 Runs prefill + generate on 3 probe records (1 NB, 1 POPE yes, 1 POPE no)
 using a VQLinearProjector-swapped LLaVA model and asserts the same 9
@@ -8,7 +8,7 @@ structural invariants as the base LLaVA smoke test.
 Usage (requires GPU + sae env, LLaVA base model):
 
     source activate sae
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_llava_vq \\
         --model_path liuhaotian/llava-v1.6-vicuna-7b
 
@@ -191,7 +191,7 @@ def _run_smoke(model_path: str, projector_ckpt: str | None) -> None:
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description="LlavaVQHookManager smoke test (N-056)")
+    parser = argparse.ArgumentParser(description="LlavaVQHookManager smoke test")
     parser.add_argument("--model_path", required=True,
                         help="Base LLaVA model (e.g. liuhaotian/llava-v1.6-vicuna-7b)")
     parser.add_argument("--projector_ckpt", default=None,

@@ -1,4 +1,4 @@
-"""Intervention-aware benchmark runner (N-042).
+"""Intervention-aware benchmark runner.
 
 Runs a full benchmark (pope_full / nb_full / hb / amber) with optional L0
 intervention, writes per-record JSONL, and prints aggregate metrics.
@@ -597,8 +597,8 @@ def main() -> None:
         ],
         default=None,
         help="full_zero is deprecated alias; window_attn_knockout requires --knockout_layer_end or "
-             "--auto_window; vti_textual (N-047) requires --vti_direction; "
-             "projector_scale (N-057) multiplies projector output by --alpha",
+             "--auto_window; vti_textual requires --vti_direction; "
+             "projector_scale multiplies projector output by --alpha",
     )
     parser.add_argument("--knockout_layer", type=int, default=0)
     parser.add_argument(
@@ -615,7 +615,7 @@ def main() -> None:
         "--vti_direction", default=None,
         help="[vti_textual] path to direction tensor (n_layers, hidden) from vti_calibrate.py",
     )
-    # Decoder-mode baselines (N-063): modify how logits are derived at inference time.
+    # Decoder-mode baselines: modify how logits are derived at inference time.
     parser.add_argument(
         "--decoder", default="standard",
         choices=["standard", "vcd", "dola"],

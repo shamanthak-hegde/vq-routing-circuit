@@ -7,8 +7,8 @@ asserts all structural invariants, and prints timing / memory reports.
 Usage (requires GPU + gill conda env):
     conda create -n gill python=3.10 -y && conda activate gill
     pip install -r gill/requirements.txt
-    pip install -e /scratch/shegde23/unified_mech
-    cd /scratch/shegde23/unified_mech
+    pip install -e <repo-root>
+    cd <repo-root>
     python -m probe.hooks.test_hooks_gill \\
         --model_path gill/checkpoints/gill_opt
 
@@ -24,7 +24,7 @@ n_gen_captured >> n_gen (same phenomenon as SEED-LLaMA). base.py handles
 the logit slicing correctly.
 
 OPT residual arithmetic tolerance widened to 0.3 (vs 0.2 for LLaVA) to
-accommodate bf16 OPT numerical variance; matches the precedent from N-049 Emu3.
+accommodate bf16 OPT numerical variance; matches the Emu3 precedent.
 """
 
 import argparse

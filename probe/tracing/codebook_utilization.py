@@ -1,4 +1,4 @@
-"""Codebook utilization measurement for VQ-class models (N-074).
+"""Codebook utilization measurement for VQ-class models.
 
 Measures active-code fraction, marginal entropy, and effective codebook size
 on 500 POPE records from the probe set.  Used to validate C3 (polarity rule):

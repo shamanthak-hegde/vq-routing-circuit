@@ -1,4 +1,4 @@
-"""Calibrate per-layer VTI textual steering directions for a VLM (N-047).
+"""Calibrate per-layer VTI textual steering directions for a VLM.
 
 Runs 2*N_DEMOS prefill passes (clean + corrupted) on POPE records, captures
 last-token hidden states at every decoder layer, computes rank-1 PCA of the
@@ -474,7 +474,7 @@ def compute_directions(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Compute VTI textual steering directions for a VLM (N-047)"
+        description="Compute VTI textual steering directions for a VLM"
     )
     parser.add_argument("--backend", required=True,
                         choices=["vilau", "llava", "unitok", "qwen3vl", "showo", "seed", "llava_vq",

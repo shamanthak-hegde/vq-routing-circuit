@@ -1,4 +1,4 @@
-"""Structural tests for WindowAttnKnockout (N-054). CPU-only, no GPU required.
+"""Structural tests for WindowAttnKnockout. CPU-only, no GPU required.
 
 Run:
     python -m probe.tracing.test_window_knockout

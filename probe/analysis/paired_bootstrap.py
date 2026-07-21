@@ -201,7 +201,7 @@ def _run_batch(results_dir: str, n_boot: int, out_tsv: str) -> None:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(
-        description="Paired-record bootstrap CIs for intervention Δ-metrics (N-083)"
+        description="Paired-record bootstrap CIs for intervention Δ-metrics"
     )
     parser.add_argument("--baseline", default=None,
                         help="Path to baseline JSONL (single-pair mode)")

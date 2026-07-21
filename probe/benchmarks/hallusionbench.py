@@ -1,4 +1,4 @@
-"""HallusionBench loader and aAcc/qAcc/fAcc scorer (N-041C).
+"""HallusionBench loader and aAcc/qAcc/fAcc scorer.
 
 HallusionBench tests visual-language hallucination with figure-question pairs.
 Each figure has multiple yes/no questions. Metrics:

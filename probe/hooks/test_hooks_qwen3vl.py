@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage (GPU required):
     source activate sae
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_qwen3vl \\
         --model_path Qwen/Qwen2.5-VL-7B-Instruct
 

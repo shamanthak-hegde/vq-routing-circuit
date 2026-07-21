@@ -1,4 +1,4 @@
-"""N-060C: Drift probe — correlate per-record embedding drift with hallucination labels.
+"""Drift probe — correlate per-record embedding drift with hallucination labels.
 
 Three measurement modes (--mode):
 

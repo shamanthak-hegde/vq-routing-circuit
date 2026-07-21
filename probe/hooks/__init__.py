@@ -4,9 +4,9 @@ probe.hooks — activation-capture hook layer for VLMs.
 Supported models
 ----------------
 LLaVA-1.6 (llava-v1.6-vicuna-7b)   →  LlavaHookManager
-LLaVA-VQ  (N-056 constructive induction variant)  →  LlavaVQHookManager
-LLaVA-VQ-FSQ  (N-072 collapse-proof variant)      →  LlavaVQHookManager (with FSQLinearProjector)
-LLaVA-MLP (N-081 matched-compute control)         →  LlavaVQHookManager (with MLPProjector)
+LLaVA-VQ  (constructive induction variant)  →  LlavaVQHookManager
+LLaVA-VQ-FSQ  (collapse-proof variant)      →  LlavaVQHookManager (with FSQLinearProjector)
+LLaVA-MLP (matched-compute control)         →  LlavaVQHookManager (with MLPProjector)
 VILA-U (vila-u-7b-256/384)          →  VilaUHookManager
 VILA v1.0 (VILA-7b)                 →  probe.hooks.vila.VilaHookManager
 UniTok MLLM (unitok_mllm)           →  UniTokHookManager

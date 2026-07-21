@@ -1,5 +1,5 @@
 """
-Projector-only training for LLaVA-VQ (N-056).
+Projector-only training for LLaVA-VQ.
 
 Freezes the CLIP vision tower and the Vicuna-7B LM; trains only the
 VQLinearProjector (down Linear + EMA VQ codebook + up Linear).
@@ -369,7 +369,7 @@ def train(args: argparse.Namespace) -> None:
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description="Projector-only training for LLaVA-VQ (N-056)")
+    parser = argparse.ArgumentParser(description="Projector-only training for LLaVA-VQ")
     parser.add_argument("--model_path", default="liuhaotian/llava-v1.6-vicuna-7b")
     parser.add_argument("--data_json", required=True,
                         help="Path to subset JSON (e.g. data/llava_pretrain/subset_50k.json)")

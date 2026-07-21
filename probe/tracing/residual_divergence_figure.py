@@ -1,5 +1,5 @@
 """
-Comparative figure: per-layer residual divergence at prompt_last (N-036).
+Comparative figure: per-layer residual divergence at prompt_last.
 
 Reads results/residual_divergence_{vilau,unitok}.json and produces a
 two-panel figure:
@@ -58,7 +58,7 @@ def make_figure(results_dir: Path, out_dir: Path) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(
-        "Per-layer residual divergence at prompt_last position  [N-036]\n"
+        "Per-layer residual divergence at prompt_last position\n"
         "Stage-1 vs Stage-2: does VILA-U amplify the substituted visual signal?",
         fontsize=11,
     )
@@ -134,7 +134,7 @@ def print_table(results_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Comparative residual-divergence figure (N-036)"
+        description="Comparative residual-divergence figure"
     )
     parser.add_argument("--results", default="results",
                         help="Directory with residual_divergence_*.json files")

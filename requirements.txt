@@ -1,0 +1,16 @@
+torch>=2.4
+torchvision
+transformers>=4.57
+huggingface_hub
+datasets
+numpy
+Pillow
+tqdm
+matplotlib
+pandas
+seaborn
+scikit-learn
+
+# CHAIR caption scoring only
+pycocoevalcap
+nltk

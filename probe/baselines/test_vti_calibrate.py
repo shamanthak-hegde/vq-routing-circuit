@@ -1,4 +1,4 @@
-"""CPU-only tests for VTI calibration direction computation (N-047).
+"""CPU-only tests for VTI calibration direction computation.
 
 Tests that:
   1. _rank1_direction returns shape (hidden,) and unit norm.

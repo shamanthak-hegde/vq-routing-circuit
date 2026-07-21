@@ -1,4 +1,4 @@
-"""Full NaturalBench loader and Group-Acc scorer (N-041B).
+"""Full NaturalBench loader and Group-Acc scorer.
 
 Loads all NaturalBench yes/no questions from BaiqiL/NaturalBench (~1,900 rows).
 Implements Group-Acc (G-Acc): per 4-way group (image1×Q1, image1×Q2, image2×Q1,

@@ -1,4 +1,4 @@
-"""Cross-model VTI direction transfer experiment (N-065).
+"""Cross-model VTI direction transfer experiment.
 
 Computes a 4×4 pairwise cosine-similarity matrix between VTI directions from
 {VILA-U, UniTok, SEED, LLaVA-VQ}, then measures POPE accuracy when one model's
@@ -179,7 +179,7 @@ def cross_apply_direction(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Cross-model VTI direction transfer analysis (N-065)"
+        description="Cross-model VTI direction transfer analysis"
     )
     subp = parser.add_subparsers(dest="mode", required=True)
 

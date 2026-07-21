@@ -1,4 +1,4 @@
-"""N-060E: Yes-bias and drift correlation analysis across the full model cohort.
+"""Yes-bias and drift correlation analysis across the full model cohort.
 
 Aggregates per-model metrics from existing sweep, accuracy, bench, and
 codebook-probe results. Computes cross-model correlations supporting C4
@@ -37,8 +37,8 @@ _MODELS: dict[str, dict[str, Any]] = {
         "bench_amber_baseline": "bench_amber_vilau_baseline.meta.json",
         "codebook_probe": "codebook_probe_vilau.jsonl",
         "model_class": "vq",
-        "gate_a1": "pass",   # rel_div 0.93 @ L2 (N-036)
-        "gate_a2": "pass",   # L0 mass 17.50 (N-038)
+        "gate_a1": "pass",   # rel_div 0.93 @ L2
+        "gate_a2": "pass",   # L0 mass 17.50
     },
     "unitok": {
         "sweep": "sweep_unitok.jsonl",
@@ -47,8 +47,8 @@ _MODELS: dict[str, dict[str, Any]] = {
         "bench_amber_baseline": "bench_amber_unitok_baseline.meta.json",
         "codebook_probe": "codebook_probe_unitok.jsonl",
         "model_class": "vq",
-        "gate_a1": "pass",   # rel_div 0.49 @ L13 (N-055/R-030)
-        "gate_a2": "fail",   # head-mass 1.37 vs threshold 10 (N-055/R-030)
+        "gate_a1": "pass",   # rel_div 0.49 @ L13
+        "gate_a2": "fail",   # head-mass 1.37 vs threshold 10
     },
     "seed": {
         "sweep": "sweep_seed.jsonl",
@@ -57,7 +57,7 @@ _MODELS: dict[str, dict[str, Any]] = {
         "bench_amber_baseline": None,
         "codebook_probe": None,
         "model_class": "vq",
-        "gate_a1": "partial",  # peaks L14 @ 0.41, misses [8,12) target (R-029)
+        "gate_a1": "partial",  # peaks L14 @ 0.41, misses [8,12) target
         "gate_a2": None,
     },
     "showo": {
@@ -67,7 +67,7 @@ _MODELS: dict[str, dict[str, Any]] = {
         "bench_amber_baseline": None,
         "codebook_probe": None,
         "model_class": "vq",
-        "gate_a1": "fail",   # flat rel_div 0.09-0.14 (R-028)
+        "gate_a1": "fail",   # flat rel_div 0.09-0.14
         "gate_a2": None,
     },
     "llava_vq": {
@@ -77,8 +77,8 @@ _MODELS: dict[str, dict[str, Any]] = {
         "bench_amber_baseline": None,
         "codebook_probe": None,
         "model_class": "vq",
-        "gate_a1": "pass",   # rel_div peak 1.276 @ L5 (R-031)
-        "gate_a2": "pass",   # L0 mass 26.025 (R-031)
+        "gate_a1": "pass",   # rel_div peak 1.276 @ L5
+        "gate_a2": "pass",   # L0 mass 26.025
     },
     "emu3": {
         "sweep": "sweep_emu3.jsonl",
@@ -415,7 +415,7 @@ def make_figures(table: list[dict], fig_dir: Path) -> None:
     ax.set_yticks([-1, 0, 1, 2])
     ax.set_yticklabels(["N/A", "fail", "partial", "pass"], fontsize=8)
     ax.legend(fontsize=8)
-    ax.set_title("N-055 diagnostic gate status per model", fontsize=10)
+    ax.set_title(" diagnostic gate status per model", fontsize=10)
     fig.tight_layout()
     fig.savefig(fig_dir / "gate_status.png", dpi=150, bbox_inches="tight")
     plt.close(fig)

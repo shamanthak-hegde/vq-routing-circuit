@@ -1,10 +1,10 @@
-"""AMBER discriminative benchmark loader and F1 scorer (N-041D).
+"""AMBER discriminative benchmark loader and F1 scorer.
 
 AMBER (A Multi-dimensional Benchmark for Hallucination Evaluation) has two
 tracks: discriminative (yes/no binary QA) and generative. This module covers
 the discriminative track only, which is what this paper needs.
 
-Reads from the local copy at AMBER_LOCAL (/scratch/shegde23/data/AMBER).
+Reads from the local copy at AMBER_LOCAL (data/AMBER).
 Layout:
   data/query/query_discriminative.json  — [{id, image, query}, ...]
   data/annotations.json                 — [{id, type, truth}, ...]
@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-AMBER_LOCAL = Path("/scratch/shegde23/data/AMBER")
+AMBER_LOCAL = Path("data/AMBER")
 
 
 @dataclass

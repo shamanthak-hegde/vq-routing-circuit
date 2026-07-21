@@ -7,7 +7,7 @@ asserts all structural invariants, and prints timing / memory reports.
 Usage (requires GPU + seed_llama conda env):
     conda create -n seed_llama python=3.10 -y && conda activate seed_llama
     pip install -r SEED/requirements.txt
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_seed \\
         --model_path AILab-CVC/seed-llama-8b-sft \\
         --tokenizer_path AILab-CVC/seed-tokenizer-2

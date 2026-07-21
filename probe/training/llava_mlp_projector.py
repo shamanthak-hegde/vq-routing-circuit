@@ -1,4 +1,4 @@
-"""MLPProjector — matched-compute MLP control for LLaVA-VQ (N-081).
+"""MLPProjector — matched-compute MLP control for LLaVA-VQ.
 
 2-layer GeLU MLP matching LLaVA-1.6's native mm_projector architecture:
     CLIP features (B, N, 1024)

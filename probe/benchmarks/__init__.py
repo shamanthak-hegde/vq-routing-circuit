@@ -1,4 +1,4 @@
-"""Full-benchmark plumbing for VLM accuracy evaluation (N-041).
+"""Full-benchmark plumbing for VLM accuracy evaluation.
 
 Modules:
   pope_full       — full POPE adversarial split loader + F1/accuracy scorer

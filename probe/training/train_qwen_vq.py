@@ -1,5 +1,5 @@
 """
-Projector-only training for Qwen2.5-VL-VQ (N-068).
+Projector-only training for Qwen2.5-VL-VQ.
 
 Replaces Qwen2.5-VL's continuous visual merger (Qwen2_5_VLPatchMerger) with a
 VQLinearProjector, freezes the entire model except the new projector, then trains
@@ -373,7 +373,7 @@ def train(args: argparse.Namespace) -> None:
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description="Projector-only training for Qwen2.5-VL-VQ (N-068)")
+    parser = argparse.ArgumentParser(description="Projector-only training for Qwen2.5-VL-VQ")
     parser.add_argument("--model_path", default="Qwen/Qwen2.5-VL-7B-Instruct")
     parser.add_argument("--data_json", required=True)
     parser.add_argument("--image_dir", required=True)

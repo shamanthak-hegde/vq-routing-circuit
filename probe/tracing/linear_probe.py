@@ -1,4 +1,4 @@
-"""Layer-wise linear probing for yes-bias direction (N-066).
+"""Layer-wise linear probing for yes-bias direction.
 
 For each decoder layer, trains a logistic regression on the prompt_last residual
 vectors to predict whether the model says "yes".  If yes-bias is committed early
@@ -213,7 +213,7 @@ def _load_backend(args):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Layer-wise linear probing for yes-bias direction (N-066)"
+        description="Layer-wise linear probing for yes-bias direction"
     )
     subp = parser.add_subparsers(dest="mode", required=True)
 

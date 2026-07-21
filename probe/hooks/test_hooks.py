@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage:
     source activate sae
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks [--model_path <path>]
 
 If --model_path is omitted, the script only validates the TokenIndex /

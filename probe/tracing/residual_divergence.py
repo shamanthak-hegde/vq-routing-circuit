@@ -1,5 +1,5 @@
 """
-Per-layer residual divergence at prompt_last: VILA-U vs UniTok (N-036).
+Per-layer residual divergence at prompt_last: VILA-U vs UniTok.
 
 For each probe record, runs a clean prefill and a noisy prefill (Gaussian noise
 added to post-projector visual token embeddings at σ_cal), then measures how much
@@ -25,7 +25,7 @@ Usage
     python -m probe.tracing.residual_divergence \\
         --backend unitok \\
         --model_path FoundationVision/unitok_mllm \\
-        --tokenizer_path /home/shegde23/VLM_Attention_Psych/UniTok/checkpoint/unitok_tokenizer.pth \\
+        --tokenizer_path /path/to/UniTok/checkpoint/unitok_tokenizer.pth \\
         --sigma 0.2 \\
         --out results/residual_divergence_unitok.json
 
@@ -53,7 +53,9 @@ from pathlib import Path
 import torch
 from PIL import Image
 
-from probe.tracing.corrupt import noisy_embeds
+from probe.tracing.corrupt import (
+    noisy_embeds, dropout_embeds, shuffle_embeds, blurred_embeds,
+)
 
 
 # ── residual capture ──────────────────────────────────────────────────────────
@@ -94,17 +96,20 @@ def _residual_from_embeds(hm, inputs_embeds: torch.Tensor) -> torch.Tensor:
 # ── per-record measurement ────────────────────────────────────────────────────
 
 @torch.no_grad()
-def measure_record(hm, record, sigma: float, seed: int = 0) -> dict:
+def measure_record(hm, record, sigma: float, seed: int = 0,
+                   corruption: str = "gaussian", drop_frac: float = 0.5,
+                   blur_radius: float = 8.0) -> dict:
     """Compute per-layer residual divergence at prompt_last for one record.
 
-    Returns
-    -------
-    dict with keys:
-      record_id  : str
-      prompt_last: int
-      abs_div    : list[float]  — ‖clean[L,pl] - noisy[L,pl]‖₂ per layer
-      rel_div    : list[float]  — abs_div[L] / ‖clean[L,pl]‖₂ per layer
-      vis_noise_rms : float     — RMS of noise added to visual positions
+    corruption (alternate visual corruptions for Gate A.1):
+      "gaussian" — add N(0, sigma^2) to projected visual tokens (default/canonical)
+      "dropout"  — zero a random `drop_frac` of visual tokens
+      "shuffle"  — randomly permute the visual-token embeddings
+      "blur"     — Gaussian-blur the pixel image (radius `blur_radius`) pre-encoder
+    The divergence normalization (vis_noise_rms = ‖noisy_vis − clean_vis‖) is
+    corruption-agnostic, so rel_div is comparable across corruption types.
+
+    Returns dict with keys: record_id, prompt_last, abs_div, rel_div, vis_noise_rms.
     """
     img = Image.open(record.image_path).convert("RGB")
 
@@ -115,8 +120,19 @@ def measure_record(hm, record, sigma: float, seed: int = 0) -> dict:
     n_layers = clean_cap.residual.shape[0]
 
     # ── noisy forward ─────────────────────────────────────────────────────────
-    noisy_emb = noisy_embeds(hm, img, record.question,
-                              visual_range=vr, sigma=sigma, seed=seed)
+    if corruption == "gaussian":
+        noisy_emb = noisy_embeds(hm, img, record.question,
+                                 visual_range=vr, sigma=sigma, seed=seed)
+    elif corruption == "dropout":
+        noisy_emb = dropout_embeds(hm, img, record.question,
+                                   visual_range=vr, drop_frac=drop_frac, seed=seed)
+    elif corruption == "shuffle":
+        noisy_emb = shuffle_embeds(hm, img, record.question,
+                                   visual_range=vr, seed=seed)
+    elif corruption == "blur":
+        noisy_emb = blurred_embeds(hm, img, record.question, blur_radius=blur_radius)
+    else:
+        raise ValueError(f"unknown corruption: {corruption}")
     noisy_res = _residual_from_embeds(hm, noisy_emb)  # (n_layers, seq_len, H)
 
     # ── divergence at prompt_last per layer ───────────────────────────────────
@@ -151,11 +167,12 @@ def measure_record(hm, record, sigma: float, seed: int = 0) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Per-layer residual divergence at prompt_last (N-036)"
+        description="Per-layer residual divergence at prompt_last"
     )
     parser.add_argument("--backend", required=True,
                         choices=["vilau", "unitok", "showo", "seed", "llava_vq", "llava_vq_fsq",
-                                 "llava_mlp", "emu3", "chameleon", "anole", "liquid", "lumina_mgpt"],
+                                 "llava_mlp", "qwen_vq", "emu3", "chameleon", "anole", "liquid",
+                                 "lumina_mgpt"],
                         help="Model backend to run")
     parser.add_argument("--model_path", required=True)
     parser.add_argument("--tokenizer_path", default=None,
@@ -184,9 +201,19 @@ def main() -> None:
                         help="Max records to process (default: all from --records_from)")
     parser.add_argument("--seed", type=int, default=0,
                         help="Noise RNG seed (default: 0)")
+    parser.add_argument("--corruption", default="gaussian",
+                        choices=["gaussian", "dropout", "shuffle", "blur"],
+                        help="visual corruption for Gate A.1 "
+                             "(default gaussian = canonical). Alternate modes write "
+                             "results/residual_divergence_<backend>_<corruption>.json")
+    parser.add_argument("--drop_frac", type=float, default=0.5,
+                        help="[--corruption dropout] fraction of visual tokens to zero")
+    parser.add_argument("--blur_radius", type=float, default=8.0,
+                        help="[--corruption blur] PIL Gaussian blur radius")
     args = parser.parse_args()
 
-    out_path = Path(args.out or f"results/residual_divergence_{args.backend}.json")
+    _suffix = "" if args.corruption == "gaussian" else f"_{args.corruption}"
+    out_path = Path(args.out or f"results/residual_divergence_{args.backend}{_suffix}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # ── load target record IDs ────────────────────────────────────────────────
@@ -233,13 +260,14 @@ def main() -> None:
         clip_dim = model.config.mm_hidden_size
         lm_dim = model.config.hidden_size
         ckpt_path = getattr(args, "projector_ckpt", None)
-        K = 16384
         if ckpt_path and os.path.exists(ckpt_path):
             state = torch.load(ckpt_path, map_location="cpu")
-            K = state["projector"]["codebook"].shape[0]
-        vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim, K=K)
-        if ckpt_path and os.path.exists(ckpt_path):
+            _cb = state["projector"]["codebook"]
+            vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim,
+                                        codebook_size=_cb.shape[0], code_dim=_cb.shape[1])
             vq_proj.load_state_dict(state["projector"])
+        else:
+            vq_proj = VQLinearProjector(clip_dim=clip_dim, lm_dim=lm_dim)
         model.model.mm_projector = vq_proj.to(next(model.parameters()).device)
         model.eval()
         hm = LlavaVQHookManager(model, tokenizer, image_processor)
@@ -300,6 +328,36 @@ def main() -> None:
         model.model.mm_projector = mlp_proj.to(next(model.parameters()).device)
         model.eval()
         hm = LlavaVQHookManager(model, tokenizer, image_processor)
+
+    elif args.backend == "qwen_vq":
+        import torch
+        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.training.train_qwen_vq import QwenVQMerger
+        from probe.hooks.qwen_vq import QwenVQHookManager
+        processor = AutoProcessor.from_pretrained(
+            args.model_path, trust_remote_code=True, padding_side="left"
+        )
+        processor.image_processor.max_pixels = 336 * 336
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            args.model_path, trust_remote_code=True,
+            torch_dtype=torch.bfloat16, attn_implementation="eager",
+            device_map="auto",
+        ).eval()
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            vq_proj = VQLinearProjector(
+                clip_dim=state["clip_dim"], lm_dim=state["lm_dim"],
+                code_dim=state["code_dim"], codebook_size=state["codebook_size"],
+            )
+            vq_proj.load_state_dict(state["projector"])
+            model.visual.merger = QwenVQMerger(
+                model.visual.merger, vq_proj.to(next(model.parameters()).device)
+            )
+        model.eval()
+        hm = QwenVQHookManager(model, processor)
+        tokenizer = processor.tokenizer
 
     elif args.backend == "vilau":
         _vilau = os.path.normpath(
@@ -548,7 +606,9 @@ def main() -> None:
     per_record = []
     for i, rec in enumerate(todo, 1):
         print(f"  [{i:2d}/{len(todo)}] {rec.id}", end="  ", flush=True)
-        result = measure_record(hm, rec, sigma=args.sigma, seed=args.seed)
+        result = measure_record(hm, rec, sigma=args.sigma, seed=args.seed,
+                                corruption=args.corruption, drop_frac=args.drop_frac,
+                                blur_radius=args.blur_radius)
         per_record.append(result)
         _n = len(result["abs_div"])
         _late_start = max(8, 3 * _n // 4)
@@ -582,6 +642,7 @@ def main() -> None:
         "backend":        args.backend,
         "model_path":     args.model_path,
         "sigma":          args.sigma,
+        "corruption":     args.corruption,
         "seed":           args.seed,
         "n_records":      len(per_record),
         "n_layers":       n_layers,

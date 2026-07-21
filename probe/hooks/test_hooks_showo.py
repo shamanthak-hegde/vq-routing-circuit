@@ -6,7 +6,7 @@ asserts all structural invariants, and prints timing / memory reports.
 
 Usage (requires GPU):
     source activate showo
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_showo \\
         --model_path showlab/show-o \\
         --vq_model_path showlab/magvitv2 \\

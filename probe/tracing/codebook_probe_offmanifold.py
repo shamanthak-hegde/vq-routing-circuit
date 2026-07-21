@@ -1,4 +1,4 @@
-"""Sub-test B (off-manifold substitution) for any VQ-class backend — N-060A.
+"""Sub-test B (off-manifold substitution) for any VQ-class backend —.
 
 Generalizes codebook_probe.py and codebook_probe_unitok.py to support all
 hook-manager backends. Runs sub-test B only: after adding calibrated Gaussian
@@ -275,6 +275,10 @@ def _load_hm(
         ).eval()
         return ChameleonHFHookManager(model, processor)
 
+    elif backend == "anole":
+        from probe.hooks.anole import AnoleHookManager
+        return AnoleHookManager.from_pretrained(hf_checkpoint_path=model_path)
+
     elif backend == "liquid":
         import os as _os, sys as _sys, torch
         _chameleon_root = _os.path.normpath(
@@ -451,7 +455,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--backend", default="llava_vq",
                     choices=["llava_vq", "vilau", "unitok", "seed", "showo", "emu3",
-                             "chameleon", "liquid", "lumina_mgpt"])
+                             "chameleon", "anole", "liquid", "lumina_mgpt"])
     ap.add_argument("--model_path", default=None)
     ap.add_argument("--tokenizer_path", default=None,
                     help="[unitok] Path to unitok_tokenizer.pth")

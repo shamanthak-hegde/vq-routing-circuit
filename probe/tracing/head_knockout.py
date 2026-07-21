@@ -1,13 +1,14 @@
-"""Pathological-route ablation and refined intervention variants (N-039, N-040A).
+"""Pathological-route ablation and refined intervention variants.
 
-Canonical intervention (D-009): pathological_route_ablation (alias: full_zero) —
+Canonical intervention: pathological_route_ablation (alias: full_zero) —
 zeroes the full self-attention output of decoder layer 0, disabling the
 pathological early visual→prompt_last routing circuit identified in VILA-U.
 Named for the mechanism it targets, not the operation it performs.
 "full_zero" is retained as a deprecated alias for backwards compatibility with
 existing JSONL meta files.
 
-N-040A additions (three refined shapes):
+Refined variants:
+
   selective        — pre-hook on o_proj; zeros head_dim slices for listed heads.
   scalar           — post-hook on self_attn; multiplies attn output by alpha.
   selective_scalar — pre-hook on o_proj; scales listed head slices by alpha.
@@ -87,7 +88,7 @@ def _zero_attn_output(module: Any, inp: tuple[Any, ...], output: Any) -> Any:
 
 
 class LayerAttnKnockout:
-    """Zero one decoder layer's self-attention output inside a context block (N-039)."""
+    """Zero one decoder layer's self-attention output inside a context block."""
 
     def __init__(self, hm: Any, layer_idx: int):
         self.hm = hm
@@ -111,7 +112,7 @@ class LayerAttnKnockout:
 
 
 class WindowAttnKnockout:
-    """Zero self-attention output on every layer in [layer_start, layer_end) (N-054).
+    """Zero self-attention output on every layer in [layer_start, layer_end).
 
     Per-model causal-window ablation: the window is chosen as the stride-4 block
     with maximum mean visual restoration score from the model's sweep JSONL, rather
@@ -143,7 +144,7 @@ class WindowAttnKnockout:
 
 
 class SelectiveHeadKnockout:
-    """Zero the o_proj input slices for specific attention heads (N-040A).
+    """Zero the o_proj input slices for specific attention heads.
 
     Hooks o_proj with a forward_pre_hook. The o_proj input has shape
     (B, seq, n_heads * head_dim); we zero the slice for each listed head.
@@ -182,7 +183,7 @@ class SelectiveHeadKnockout:
 
 
 class ScalarLayerScale:
-    """Multiply one decoder layer's self-attention output by a scalar alpha (N-040A).
+    """Multiply one decoder layer's self-attention output by a scalar alpha.
 
     alpha=0.0 reproduces LayerAttnKnockout (full zeroing).
     alpha=1.0 is the identity.
@@ -220,7 +221,7 @@ class ScalarLayerScale:
 
 
 class SelectiveHeadScale:
-    """Scale the o_proj input slices for specific heads by alpha (N-040A).
+    """Scale the o_proj input slices for specific heads by alpha.
 
     Combines SelectiveHeadKnockout (head selection) and ScalarLayerScale (soft
     suppression). alpha=0.0 is equivalent to SelectiveHeadKnockout; alpha=1.0
@@ -259,7 +260,7 @@ class SelectiveHeadScale:
 
 class VTITextualSteer:
     """VTI textual intervention: add a precomputed per-layer steering direction
-    to the decoder block output (residual stream) during inference (N-047).
+    to the decoder block output (residual stream) during inference.
 
     Direction tensor shape: (n_layers, hidden), computed by
     probe/baselines/vti_calibrate.py from (clean, corrupted) prefill pairs.
@@ -330,7 +331,7 @@ class VTITextualSteer:
 
 
 class ProjectorOutputScale:
-    """Multiply the projector output by a scalar alpha (N-057).
+    """Multiply the projector output by a scalar alpha.
 
     Registers a forward hook on hm._get_projector() that returns output * alpha.
     alpha=1.0 is the identity; alpha<1 down-scales; alpha>1 amplifies.
@@ -856,11 +857,11 @@ def main() -> None:
                  "selective", "scalar", "selective_scalar", "vti_textual"],
         default="pathological_route_ablation",
         help=(
-            "Intervention shape: pathological_route_ablation (canonical D-009; "
-            "full_zero is a deprecated alias), window_attn_knockout (N-054: "
+            "Intervention shape: pathological_route_ablation (canonical; "
+            "full_zero is a deprecated alias), window_attn_knockout (: "
             "zero all attn in [knockout_layer, knockout_layer_end)), selective (per-head zero), "
             "scalar (layer-wide alpha scaling), selective_scalar (per-head alpha scaling), "
-            "vti_textual (N-047: per-layer residual-stream steering; requires --vti_direction)"
+            "vti_textual (: per-layer residual-stream steering; requires --vti_direction)"
         ),
     )
     parser.add_argument(

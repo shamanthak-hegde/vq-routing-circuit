@@ -1,15 +1,15 @@
 """
-Figures for per-head visual-to-prompt_last attention weights (N-038, N-043).
+Figures for per-head visual-to-prompt_last attention weights.
 
-N-038: per-backend heatmaps + VILA-U vs UniTok comparison.
-N-043: --include_noisy adds a clean-vs-noisy VILA-U side-by-side panel.
+Renders per-backend heatmaps plus a VILA-U vs UniTok comparison. --include_noisy
+adds a clean-vs-noisy VILA-U side-by-side panel.
 
 Usage
 -----
-    # N-038 (clean only)
+    # clean only
     python -m probe.tracing.attn_head_weights_figure
 
-    # N-043 (clean + noisy, reads attn_head_weights_vilau_clean_noisy.json)
+    # clean + noisy (reads attn_head_weights_vilau_clean_noisy.json)
     python -m probe.tracing.attn_head_weights_figure --include_noisy
 """
 
@@ -190,7 +190,7 @@ def make_figures(results_dir: Path, out_dir: Path, include_noisy: bool = False) 
         cbar = fig.colorbar(im, ax=axes, shrink=0.85)
         cbar.set_label("Mean attention mass to visual block")
         fig.suptitle(
-            "Per-head visual routing to prompt_last [N-038]",
+            "Per-head visual routing to prompt_last",
             fontsize=11,
         )
         out_path = out_dir / "comparison_vilau_vs_unitok.png"
@@ -198,7 +198,7 @@ def make_figures(results_dir: Path, out_dir: Path, include_noisy: bool = False) 
         print(f"Figure written to {out_path}")
         plt.close(fig)
 
-    # N-043: clean-vs-noisy panel for VILA-U
+    # clean-vs-noisy panel for VILA-U
     if include_noisy:
         cn_data = _load_clean_noisy(results_dir, "vilau")
         if cn_data is None:
@@ -222,7 +222,7 @@ def make_figures(results_dir: Path, out_dir: Path, include_noisy: bool = False) 
             cbar = fig.colorbar(im, ax=axes, shrink=0.85)
             cbar.set_label("Mean attention mass to visual block")
             fig.suptitle(
-                f"VILA-U: clean vs noisy (σ={sigma}) L0 routing [N-043]  "
+                f"VILA-U: clean vs noisy (σ={sigma}) L0 routing  "
                 f"(L0 Pearson r={corr:.3f})",
                 fontsize=11,
             )
@@ -234,7 +234,7 @@ def make_figures(results_dir: Path, out_dir: Path, include_noisy: bool = False) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Render N-038/N-043 per-head visual-attention heatmaps"
+        description="Render per-head visual-attention heatmaps"
     )
     parser.add_argument("--results", default="results",
                         help="Directory with attn_head_weights_*.json files")
@@ -243,7 +243,7 @@ def main() -> None:
     parser.add_argument(
         "--include_noisy",
         action="store_true",
-        help="[N-043] Also render clean-vs-noisy VILA-U panel",
+        help="Also render clean-vs-noisy VILA-U panel",
     )
     args = parser.parse_args()
 

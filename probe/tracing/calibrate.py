@@ -83,8 +83,9 @@ def _main():
     parser = argparse.ArgumentParser(description="Calibrate sigma for POPE gaussian_noise")
     parser.add_argument("--backend", default="llava",
                         choices=["llava", "llava_vq", "llava_vq_fsq", "llava_mlp", "vilau", "vila",
-                                 "unitok", "qwen3vl", "haplo", "emu3", "lavit", "showo", "seed",
-                                 "gill", "janus", "chameleon", "anole", "liquid", "lumina_mgpt"],
+                                 "unitok", "qwen3vl", "qwen_vq", "haplo", "emu3", "lavit", "showo",
+                                 "seed", "gill", "janus", "chameleon", "anole", "liquid",
+                                 "lumina_mgpt"],
                         help="Model backend (default: llava)")
     parser.add_argument("--tokenizer_path", default=None,
                         help="[unitok only] Path to unitok_tokenizer.pth")
@@ -232,6 +233,33 @@ def _main():
             device_map="auto",
         ).eval()
         hm = Qwen3VLHookManager(model, processor)
+    elif args.backend == "qwen_vq":
+        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+        from probe.training.llava_vq_projector import VQLinearProjector
+        from probe.training.train_qwen_vq import QwenVQMerger
+        from probe.hooks.qwen_vq import QwenVQHookManager
+        processor = AutoProcessor.from_pretrained(
+            args.model_path, trust_remote_code=True, padding_side="left"
+        )
+        processor.image_processor.max_pixels = 336 * 336
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            args.model_path, trust_remote_code=True,
+            torch_dtype=torch.bfloat16, attn_implementation="eager",
+            device_map="auto",
+        ).eval()
+        ckpt_path = getattr(args, "projector_ckpt", None)
+        if ckpt_path and os.path.exists(ckpt_path):
+            state = torch.load(ckpt_path, map_location="cpu")
+            vq_proj = VQLinearProjector(
+                clip_dim=state["clip_dim"], lm_dim=state["lm_dim"],
+                code_dim=state["code_dim"], codebook_size=state["codebook_size"],
+            )
+            vq_proj.load_state_dict(state["projector"])
+            model.visual.merger = QwenVQMerger(
+                model.visual.merger, vq_proj.to(next(model.parameters()).device)
+            )
+        model.eval()
+        hm = QwenVQHookManager(model, processor)
     elif args.backend == "haplo":
         _haplo = os.path.join(os.path.dirname(__file__), "..", "..", "HaploVLM")
         _haplo_model = os.path.join(_haplo, "haploomni", "model")

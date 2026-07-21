@@ -1,4 +1,4 @@
-"""Full POPE adversarial split loader and F1 scorer (N-041A).
+"""Full POPE adversarial split loader and F1 scorer.
 
 Loads the complete lmms-lab/POPE adversarial split (~3,000 records) — NOT the
 paired 200-record probe-cache subset. Returns BenchRecord objects compatible

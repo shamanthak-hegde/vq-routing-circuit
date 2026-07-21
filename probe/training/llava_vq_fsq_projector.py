@@ -1,5 +1,5 @@
 """
-FSQLinearProjector — collapse-proof drop-in for LLaVA's mm_projector (N-072).
+FSQLinearProjector — collapse-proof drop-in for LLaVA's mm_projector.
 
 Replaces the single-level VQ codebook (K=16384, collapses to ~90 active codes)
 with Finite Scalar Quantization (Mentzer et al. 2024).  FSQ quantizes each
@@ -37,7 +37,7 @@ import torch.nn.functional as F
 
 
 class FSQLinearProjector(nn.Module):
-    """CLIP → FSQ → LM-hidden projector for LLaVA-VQ-FSQ (N-072).
+    """CLIP → FSQ → LM-hidden projector for LLaVA-VQ-FSQ.
 
     Parameters
     ----------

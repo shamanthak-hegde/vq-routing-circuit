@@ -1,5 +1,5 @@
 """
-Manifold-density measurement for VLM backends (N-035).
+Manifold-density measurement for VLM backends.
 
 For each backend, collects post-projector visual token embeddings across the
 probe set and computes three manifold-richness descriptors:
@@ -585,7 +585,7 @@ def _build_hook_manager(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Manifold-density measurement for VLM backends (N-035)"
+        description="Manifold-density measurement for VLM backends"
     )
     parser.add_argument(
         "--backend", required=True,
@@ -605,7 +605,7 @@ def main():
                         help="Output directory for JSONL + JSON (default: results/)")
     parser.add_argument(
         "--audit", action="store_true",
-        help="N-037 audit mode: use chunked TwoNN + per-record-pair cross-NN. "
+        help="audit mode: use chunked TwoNN + per-record-pair cross-NN. "
              "Required when n_subsample >= 100k.",
     )
     parser.add_argument(

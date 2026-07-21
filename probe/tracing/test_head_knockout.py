@@ -1,4 +1,4 @@
-"""CPU-only sanity tests for the N-040A / N-047 / N-057 intervention library.
+"""CPU-only sanity tests for the / / intervention library.
 
 Tests that:
   1. SelectiveHeadKnockout zeros exactly the listed head slices and leaves others unchanged.

@@ -1,6 +1,6 @@
-"""VCD LogitsProcessor for multi-token generation (N-082B).
+"""VCD LogitsProcessor for multi-token generation.
 
-For yes/no benchmarks, the prefill-mode vcd.py is sufficient (D-030).
+For yes/no benchmarks, the prefill-mode vcd.py is sufficient.
 This module extends VCD to open-ended generation (CHAIR) by running a
 parallel noisy-branch forward at every decode step via HuggingFace's
 LogitsProcessor interface.

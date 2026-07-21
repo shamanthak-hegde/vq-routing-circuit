@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage:
     source activate vila
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_vila --model_path Efficient-Large-Model/VILA-7b
 
 Mirrors test_hooks_vilau.py but targets VILA v1.0:

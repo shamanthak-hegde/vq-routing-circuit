@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage (GPU required, haplovlm env):
     source activate haplovlm
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_haplo \\
         --model_path EasonXiao-888/HaploOmni
 

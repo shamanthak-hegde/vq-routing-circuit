@@ -219,7 +219,12 @@ class AnoleHookManager(ChameleonHFHookManager):
         input_ids and returns pixel_values separately.  We keep the raw PIL
         image instead so downstream can use the Meta ImageTokenizer directly.
         """
-        prompt = f"<image>{question}\nAnswer:"
+        prior = getattr(self, "_followup_prior", None)
+        if prior:
+            pq, pa = prior
+            prompt = f"<image>{pq}\nAnswer: {pa}\n{question}\nAnswer:"
+        else:
+            prompt = f"<image>{question}\nAnswer:"
         inputs = self.processor(text=prompt, images=image, return_tensors="pt")
         input_ids = inputs.input_ids.to(self._model_device)
         return input_ids, image, None   # PIL image as second element

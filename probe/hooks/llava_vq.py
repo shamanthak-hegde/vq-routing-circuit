@@ -1,5 +1,5 @@
 """
-LlavaVQHookManager — hook manager for LLaVA-VQ (N-056).
+LlavaVQHookManager — hook manager for LLaVA-VQ.
 
 Identical to LlavaHookManager except:
   - mm_projector is a VQLinearProjector instead of mlp2x_gelu

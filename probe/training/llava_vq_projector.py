@@ -1,5 +1,5 @@
 """
-VQLinearProjector — drop-in replacement for LLaVA's mm_projector (N-056).
+VQLinearProjector — drop-in replacement for LLaVA's mm_projector.
 
 Replaces the mlp2x_gelu MLP with:
     CLIP features (B, N, 1024)
@@ -26,7 +26,7 @@ import torch.nn.functional as F
 
 
 class VQLinearProjector(nn.Module):
-    """CLIP → VQ → LM-hidden projector for LLaVA-VQ (N-056).
+    """CLIP → VQ → LM-hidden projector for LLaVA-VQ.
 
     Parameters
     ----------

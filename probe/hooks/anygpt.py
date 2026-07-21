@@ -28,7 +28,7 @@ Token layout
 where k+1 = <soim> position, k+2 = first visual code, k+33 = last visual code,
 k+34 = <eoim> position, and asst = prompt_len - _asst_suffix_len.
 
-Predicted gate result (pre-registered in handoffs/2026-05-23_N-084_pre_registration.md):
+Predicted gate result (recorded before running):
   Gate A.1: FAIL — no discrete early peak (monotonic ramp expected, like SEED-LLaMA)
   Gate A.2: FAIL — routing distributed to late layers, L0 mass < 5
   σ_cal: very low (0.01–0.05), same tier as SEED-LLaMA (vocab-injection, no amplification)

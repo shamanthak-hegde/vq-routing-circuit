@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage:
     source activate lavit
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_lavit --model_path rain1011/LaVIT-7B-v2
 
 Mirrors test_hooks_vilau.py but targets LaVIT:

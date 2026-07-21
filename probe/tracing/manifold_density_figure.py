@@ -1,5 +1,5 @@
 """
-Cross-model manifold-density figure (N-035).
+Cross-model manifold-density figure.
 
 Reads per-backend manifold_density_<backend>.json summaries and existing
 sweep_<backend>.jsonl files, then produces the headline scatter + regression
@@ -307,7 +307,7 @@ def _make_figure(rows: list[dict], out_dir: Path) -> None:
     cbar.set_label("Early-visual circuit score\n(visual[0,8) − prompt_last[20,32))", fontsize=8)
 
     fig.suptitle(
-        "Cross-model manifold-density vs circuit susceptibility  [N-035]",
+        "Cross-model manifold-density vs circuit susceptibility",
         fontsize=12, y=1.01,
     )
     fig.tight_layout()
@@ -322,7 +322,7 @@ def _make_figure(rows: list[dict], out_dir: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Cross-model manifold-density figure (N-035)"
+        description="Cross-model manifold-density figure"
     )
     parser.add_argument("--results", default="results",
                         help="Directory containing manifold_density_*.json and sweep_*.jsonl")

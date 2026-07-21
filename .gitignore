@@ -2,6 +2,31 @@
 .codex
 .vscode/
 __pycache__/
-START_SESSION_PROMPT.md
+*.pyc
 
+# Data and weights, none of which belong in git
 data/
+checkpoints/
+probe/cached/*.pt
+probe/benchmarks/coco_annotations/
+
+# Per-record generation logs; only small summaries are tracked
+results/bench_*
+results/sweep_*
+results/audit_*
+results/*.log
+figures/
+
+# Internal working notes, kept out of the public tree
+TASKS.md
+PROGRESS.md
+RESULTS.md
+DECISIONS.md
+BLOCKERS.md
+AGENTS.md
+CLAUDE.md
+START_SESSION_PROMPT.md
+CLEANUP_PLAN.md
+AI_CONTRIBUTION_REPORT.md
+handoffs/
+paper_draft/

@@ -154,7 +154,12 @@ class ChameleonHFHookManager(VLMHookManager):
         """
         # Chameleon base model: no chat template. Use a direct completion format
         # so the model naturally predicts "yes" or "no" as the first token.
-        prompt = f"<image>{question}\nAnswer:"
+        prior = getattr(self, "_followup_prior", None)
+        if prior:
+            pq, pa = prior
+            prompt = f"<image>{pq}\nAnswer: {pa}\n{question}\nAnswer:"
+        else:
+            prompt = f"<image>{question}\nAnswer:"
         inputs = self.processor(
             text=prompt,
             images=image,

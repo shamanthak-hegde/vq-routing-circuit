@@ -1,6 +1,6 @@
-"""DoLA LogitsProcessor for multi-token generation (N-082B).
+"""DoLA LogitsProcessor for multi-token generation.
 
-For yes/no benchmarks, the prefill-mode dola.py is sufficient (D-030).
+For yes/no benchmarks, the prefill-mode dola.py is sufficient.
 This module extends DoLA to open-ended generation (CHAIR) by hooking into
 an early decoder layer at every step and contrasting with the mature layer.
 

@@ -4,7 +4,7 @@ Runs `probe.benchmarks.run_bench --knockout_mode scalar --knockout_layer 0`
 on Liquid POPE-full for α ∈ {0.25, 0.5, 0.75} sequentially, then reports the
 question-conditional sanity-check statistics on each output.
 
-Decision rule per D-040: a usable C6 alpha must satisfy
+Decision rule : a usable C6 alpha must satisfy
   - overall logit-gap std > 1.0   (question-conditional signal preserved)
   - yes_rate ∈ [0.4, 0.6]         (no longer all-no, no longer all-yes)
 
@@ -140,7 +140,7 @@ def stats(rows: list[dict]) -> dict:
 
 
 def verdict(s: dict) -> str:
-    """Apply D-040 rule: usable C6 = std > 1.0 AND yes_rate ∈ [0.4, 0.6]."""
+    """Apply rule: usable C6 = std > 1.0 AND yes_rate ∈ [0.4, 0.6]."""
     std_ok = s["all"]["std"] > 1.0
     yr_ok = 0.4 <= s["yes_rate"] <= 0.6
     if std_ok and yr_ok:
@@ -176,7 +176,7 @@ def build_report(per_alpha: dict[float, dict], base_stats: dict, l0_stats: dict)
     lines.append("# Liquid scalar L0 scaling sweep (R-A-soft)\n")
     lines.append(
         "Tests whether a partial L0 ablation preserves Liquid's question-conditional "
-        "signal while reducing yes-bias. Decision rule (D-040): a usable C6 α "
+        "signal while reducing yes-bias. Decision rule: a usable C6 α "
         "needs `gap-std > 1.0` AND `yes_rate ∈ [0.4, 0.6]`.\n"
     )
 
@@ -216,7 +216,7 @@ def build_report(per_alpha: dict[float, dict], base_stats: dict, l0_stats: dict)
             "scaling that meaningfully shifts yes-rate also collapses gap-std below "
             "1.0. This is itself a publishable C3 prediction — collapsed-VQ models "
             "concentrate yes-signal entirely in L0, with no graded fallback. The "
-            "paper's C6 evidence for Liquid stays C1-only (D-040).\n"
+            "paper's C6 evidence for Liquid stays C1-only.\n"
         )
 
     lines.append("\n---\n")

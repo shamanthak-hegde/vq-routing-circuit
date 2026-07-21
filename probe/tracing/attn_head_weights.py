@@ -1,10 +1,10 @@
 """
-Per-head visual-to-prompt_last attention weights (N-038, N-043).
+Per-head visual-to-prompt_last attention weights.
 
-N-038: clean-prefill measurement for VILA-U and UniTok.
-N-043: extends with --include_noisy to also capture noisy-prefill attention
-       (sigma-calibrated Gaussian noise on post-projector visual tokens), enabling
-       a clean-vs-noisy side-by-side comparison to verify L0 routing is input-invariant.
+Measures per-head attention on a clean prefill pass. With --include_noisy it also
+captures a noisy-prefill pass (sigma-calibrated Gaussian noise on post-projector
+visual tokens), enabling a clean-vs-noisy comparison that verifies L0 routing is
+input-invariant.
 
 Usage
 -----
@@ -13,7 +13,7 @@ Usage
         --model_path mit-han-lab/vila-u-7b-256 \
         --out results/attn_head_weights_vilau.json
 
-    # N-043: include noisy prefill
+    # include noisy prefill
     python -m probe.tracing.attn_head_weights \
         --backend vilau \
         --model_path mit-han-lab/vila-u-7b-256 \
@@ -587,7 +587,7 @@ def measure_record(hm, record) -> dict:
 def measure_record_noisy(hm, record, sigma: float = 1.0, seed: int = 0) -> dict:
     """Like measure_record but runs a noisy-prefill pass (Gaussian noise on visual tokens).
 
-    Used by N-043 to confirm that L0 routing is input-invariant: the visual->prompt_last
+    Used to confirm that L0 routing is input-invariant: the visual->prompt_last
     routing pattern should look nearly identical on clean and noisy inputs because the
     model routes whatever is present (clean or substituted VQ tokens) through the same heads.
     """
@@ -712,7 +712,7 @@ def _print_summary(output: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Per-head visual-to-prompt_last attention weights (N-038, N-043)"
+        description="Per-head visual-to-prompt_last attention weights"
     )
     parser.add_argument("--backend", required=True, choices=["vilau", "vilau_mlp", "unitok", "showo", "llava_vq", "llava_vq_fsq", "llava_mlp", "emu3", "janus", "qwen_vq", "chameleon", "anole", "liquid", "lumina_mgpt"])
     parser.add_argument("--model_path", required=True)
@@ -738,11 +738,11 @@ def main() -> None:
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--out", default=None,
                         help="Output JSON path (default: results/attn_head_weights_<backend>.json)")
-    # N-043: clean-vs-noisy comparison
+    # clean-vs-noisy comparison
     parser.add_argument(
         "--include_noisy",
         action="store_true",
-        help="[N-043] Also run a noisy-prefill pass and include noisy head stats",
+        help="Also run a noisy-prefill pass and include noisy head stats",
     )
     parser.add_argument(
         "--sigma", type=float, default=1.0,
@@ -750,7 +750,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--projector_scale", type=float, default=None,
-        help="[N-057] Scale projector output by this alpha before measuring L0 mass",
+        help="Scale projector output by this alpha before measuring L0 mass",
     )
     parser.add_argument(
         "--max_image_size", type=int, default=128,

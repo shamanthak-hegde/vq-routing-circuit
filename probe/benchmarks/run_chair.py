@@ -1,4 +1,4 @@
-"""Open-ended captioning runner for CHAIR evaluation (N-076).
+"""Open-ended captioning runner for CHAIR evaluation.
 
 Usage:
     # Baseline
@@ -17,7 +17,7 @@ Usage:
         --model_path mit-han-lab/vila-u-7b-256 \\
         --smoke_test --out /tmp/smoke_chair.jsonl
 
-Images are drawn from /scratch/shegde23/data/val2014 (full COCO val2014, ~40k images).
+Images are drawn from data/val2014 (full COCO val2014, ~40k images).
 Default: 500 randomly sampled with --seed 0 (reproducible; all conditions use same seed).
 Supported backends: vilau, chameleon, liquid, anole
 """
@@ -37,7 +37,7 @@ from pathlib import Path
 from PIL import Image
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_IMG_DIR = Path("/scratch/shegde23/data/val2014")
+DEFAULT_IMG_DIR = Path("data/val2014")
 
 
 def _parse_image_id(fname: str) -> int:
@@ -153,7 +153,7 @@ def _load_backend(args: argparse.Namespace):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Open-ended captioning runner for CHAIR evaluation (N-076)"
+        description="Open-ended captioning runner for CHAIR evaluation"
     )
     parser.add_argument("--backend", required=True,
                         choices=["vilau", "chameleon", "liquid", "anole", "llava_vq"])
@@ -166,12 +166,17 @@ def main() -> None:
                         help="[llava_vq] path to VQLinearProjector checkpoint (.pt)")
     parser.add_argument("--knockout_layer", type=int, default=None,
                         help="Decoder layer to zero (pathological_route_ablation); omit for baseline")
+    parser.add_argument("--scale_alpha", type=float, default=None,
+                        help="[with --knockout_layer] retained-fraction coefficient for a "
+                             "graded (ScalarLayerScale) ablation instead of full zeroing. "
+                             "1.0=identity (baseline), 0.0=full knockout. Attenuation strength "
+                             "= 1 - scale_alpha. Omit for full zeroing (dose-response).")
     parser.add_argument(
         "--decoder", default="standard",
         choices=["standard", "vcd", "dola"],
         help="standard: normal generation.  "
-             "vcd: Visual Contrastive Decoding (N-082B) — requires --decoder_sigma.  "
-             "dola: Decoding by Contrasting Layers (N-082B) — uses --decoder_early_layer.",
+             "vcd: Visual Contrastive Decoding — requires --decoder_sigma.  "
+             "dola: Decoding by Contrasting Layers — uses --decoder_early_layer.",
     )
     parser.add_argument("--decoder_sigma", type=float, default=40.0,
                         help="[vcd] gaussian noise std-dev in pixel space 0–255 (default 40.0)")
@@ -214,10 +219,14 @@ def main() -> None:
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    from probe.tracing.head_knockout import LayerAttnKnockout
+    from probe.tracing.head_knockout import LayerAttnKnockout, ScalarLayerScale
 
     knockout_label = args.knockout_layer
-    if knockout_label is not None:
+    if knockout_label is not None and args.scale_alpha is not None:
+        ctx = ScalarLayerScale(hm, knockout_label, args.scale_alpha)
+        print(f"Intervention: L{knockout_label} scalar scale coeff={args.scale_alpha} "
+              f"(attenuation strength {1.0 - args.scale_alpha:.2f})")
+    elif knockout_label is not None:
         ctx = LayerAttnKnockout(hm, knockout_label)
         print(f"Intervention: L{knockout_label} attention knockout")
     else:
@@ -291,6 +300,7 @@ def main() -> None:
                 "caption": text,
                 "backend": args.backend,
                 "knockout_layer": knockout_label,
+                "scale_alpha": args.scale_alpha,
                 "decoder": _decoder,
                 "decoder_alpha": _decoder_alpha if _decoder != "standard" else None,
                 "decoder_sigma": _decoder_sigma if _decoder == "vcd" else None,

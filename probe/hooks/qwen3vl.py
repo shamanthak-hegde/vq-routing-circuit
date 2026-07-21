@@ -186,15 +186,27 @@ class Qwen3VLHookManager(VLMHookManager):
         """
         from qwen_vl_utils import process_vision_info
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
+        prior = getattr(self, "_followup_prior", None)
+        if prior:
+            pq, pa = prior
+            messages = [
+                {"role": "user", "content": [
                     {"type": "image", "image": image},
-                    {"type": "text", "text": question},
-                ],
-            }
-        ]
+                    {"type": "text", "text": pq},
+                ]},
+                {"role": "assistant", "content": [{"type": "text", "text": pa}]},
+                {"role": "user", "content": [{"type": "text", "text": question}]},
+            ]
+        else:
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": question},
+                    ],
+                }
+            ]
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )

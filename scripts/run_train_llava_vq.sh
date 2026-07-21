@@ -2,7 +2,7 @@
 set -e
 # module load mamba;
 # source activate sae
-cd /scratch/shegde23/unified_mech
+cd "$(dirname "$0")/.."
 
 python -m probe.training.train_llava_vq \
     --model_path liuhaotian/llava-v1.6-vicuna-7b \

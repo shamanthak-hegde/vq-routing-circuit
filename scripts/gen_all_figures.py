@@ -164,7 +164,7 @@ def fig1_codebook_scatter():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def fig2_chair_bar():
-    # hardcoded from R-087, R-088, R-094 (RESULTS.md verified)
+    # hardcoded (the project log verified)
     data = {
         "VILA-U":           {"CHAIRs": (35.8, 17.6), "CHAIRi": (10.3, 7.1),
                              "Recall": (58.5, 51.6), "AvgLen": (158, 78)},
@@ -248,21 +248,21 @@ def fig4_dissociation():
     # VILA-U POPE acc (from meta files)
     pope_acc = {
         "Baseline":   load_meta("bench_pope_full_vilau_baseline.meta.json")["accuracy"],
-        "VCD-tuned":  0.7290,  # R-093
-        "DoLA-tuned": 0.7937,  # R-093
+        "VCD-tuned":  0.7290,
+        "DoLA-tuned": 0.7937,
         "L0":         load_meta("bench_pope_full_vilau_L0.meta.json")["accuracy"],
         "L1":         load_meta("bench_pope_full_vilau_L1.meta.json")["accuracy"],
         "VTI":        load_meta("bench_pope_full_vilau_vti_a0.005.meta.json")["accuracy"],
     }
     amber_acc = {
         "Baseline":   load_meta("bench_amber_vilau_baseline.meta.json")["accuracy"],
-        "VCD-tuned":  0.7070,   # R-093
-        "DoLA-tuned": 0.7952,   # R-093
+        "VCD-tuned":  0.7070,
+        "DoLA-tuned": 0.7952,
         "L0":         load_meta("bench_amber_vilau_intervention.meta.json")["accuracy"],
         "L1":         load_meta("bench_amber_vilau_L1.meta.json")["accuracy"],
         "VTI":        load_meta("bench_amber_vilau_vti_a0.005.meta.json")["accuracy"],
     }
-    # CHAIRi only available for: Baseline, L0, DoLA-tuned, VCD-tuned (R-094)
+    # CHAIRi only available for: Baseline, L0, DoLA-tuned, VCD-tuned
     chairi = {
         "Baseline":   10.3,
         "VCD-tuned":  10.7,
@@ -322,7 +322,7 @@ def fig4_dissociation():
     ax2.set_title("Generation hallucination (CHAIRi)\n↓ Only L0 ablation helps", fontsize=9)
     ax2.set_ylim(0, 14)
 
-    fig.suptitle("Binary-vs-CHAIR dissociation on VILA-U  (§5.6 / D-051)",
+    fig.suptitle("Binary-vs-CHAIR dissociation on VILA-U  (§5.6)",
                  fontsize=10, y=1.02)
     savefig("intervention/dissociation.png", fig)
 
@@ -345,7 +345,7 @@ def fig5_ci_errorbars():
         ("chameleon_pope_L0","POPE","Chameleon L0"),
     ]
 
-    # Also add tuned baselines (hardcoded from R-093, no bootstrap — just point estimates)
+    # Also add tuned baselines (hardcoded, no bootstrap — just point estimates)
     extra = [
         ("DoLA-tuned (POPE)", "POPE", "DoLA-tuned", 0.7937 - 0.6193, None, None),
         ("DoLA-tuned (AMBER)","AMBER","DoLA-tuned", 0.7952 - 0.3967, None, None),
@@ -633,7 +633,7 @@ def fig11_k_sweep():
         l0s.append(lm["yes_rate"])
         deltas.append(lm["yes_rate"] - bm["yes_rate"])
 
-    # utilisation from RESULTS.md (R-082 / R-083)
+    # utilisation from the project log
     util = {1024: 15.4, 4096: 2.3, 16384: 0.55, 65536: 0.13}
 
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
@@ -676,7 +676,7 @@ def fig11_k_sweep():
     ]
     axes[1].legend(handles=leg, fontsize=7)
 
-    fig.suptitle("K-sweep: codebook size vs polarity  (§5.2 / §5.3 / D-044)", fontsize=10)
+    fig.suptitle("K-sweep: codebook size vs polarity  (§5.2 / §5.3)", fontsize=10)
     savefig("k_sweep/k_sweep_polarity.png", fig)
 
 
@@ -693,13 +693,13 @@ def fig12_induction_reversal():
          load_meta("bench_pope_full_llava_baseline.meta.json")["yes_rate"],
          load_meta("bench_pope_full_llava_vq_baseline.meta.json")["yes_rate"],
          "→  pathology induced",   C_INDUCED),
-        ("Reversal (D-034)",
+        ("Reversal",
          "VILA-U\n(VQ-trained LLM)",
          "VILA-U-MLP\n(MLP projector swapped in)",
          load_meta("bench_pope_full_vilau_baseline.meta.json")["yes_rate"],
          load_meta("bench_pope_full_vilau_mlp_baseline.meta.json")["yes_rate"],
          "→  pathology WORSENS",   "#d73027"),
-        ("Matched control (N-081)",
+        ("Matched control",
          "LLaVA-VQ\n(VQ projector)",
          "LLaVA-MLP\n(same steps, MLP)",
          load_meta("bench_pope_full_llava_vq_baseline.meta.json")["yes_rate"],
@@ -762,7 +762,7 @@ def fig13_l1_polarity():
         ax.text(0.5, -0.22, annotation, ha="center", fontsize=7.5, color=color,
                 transform=ax.transAxes, wrap=True)
 
-    fig.suptitle("L1 ablation effect by model class  (§5.6 / §7.3 / R-086)",
+    fig.suptitle("L1 ablation effect by model class  (§5.6 / §7.3)",
                  fontsize=10, y=1.06)
     savefig("mechanism/l1_cross_arch_polarity.png", fig)
 
@@ -949,16 +949,16 @@ def regen_benchmark_summary():
         load_meta("bench_pope_full_vilau_L0.meta.json")["accuracy"],
         load_meta("bench_pope_full_vilau_L1.meta.json")["accuracy"],
         load_meta("bench_pope_full_vilau_vti_a0.005.meta.json")["accuracy"],
-        0.7290,  # R-093 VCD best
-        0.7937,  # R-093 DoLA best
+        0.7290,  # VCD best
+        0.7937,  # DoLA best
     ]
     amber_acc = [
         load_meta("bench_amber_vilau_baseline.meta.json")["accuracy"],
         load_meta("bench_amber_vilau_intervention.meta.json")["accuracy"],
         load_meta("bench_amber_vilau_L1.meta.json")["accuracy"],
         load_meta("bench_amber_vilau_vti_a0.005.meta.json")["accuracy"],
-        0.7070,  # R-093 VCD best
-        0.7952,  # R-093 DoLA best
+        0.7070,  # VCD best
+        0.7952,  # DoLA best
     ]
 
     method_colors = [C_CTRL, C_L0, C_L1, "#9e0142", C_VCD, C_DOLA]
@@ -981,7 +981,7 @@ def regen_benchmark_summary():
         ax.text(1.5, 87, "mechanism-targeted", fontsize=7, color="#555555", ha="center")
         ax.text(4.5, 87, "tuned baselines", fontsize=7, color="#555555", ha="center")
 
-    fig.suptitle("VILA-U intervention summary: mechanism-targeted vs tuned baselines  (§5.6 / D-051)",
+    fig.suptitle("VILA-U intervention summary: mechanism-targeted vs tuned baselines  (§5.6)",
                  fontsize=10)
     savefig("intervention/benchmark_summary.png", fig)
 

@@ -6,7 +6,7 @@ asserts all structural invariants, and prints a timing / memory report.
 
 Usage (GPU required):
     source activate unitok
-    cd /scratch/shegde23/unified_mech
+    cd <repo-root>
     python -m probe.hooks.test_hooks_unitok \\
         --model_path FoundationVision/unitok_mllm \\
         --tokenizer_path UniTok/checkpoint/unitok_tokenizer.pth

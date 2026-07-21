@@ -1,299 +1,168 @@
-# unified_mech — VLM Mechanistic Interpretability
+# vq-routing-circuit
 
-Paired micro-benchmark and probe infrastructure for mechanistic interpretability
-experiments on vision-language models.
+Code for studying an early-layer attention routing circuit in vision-language
+models that tokenize images through a vector-quantized codebook.
 
----
+The short version: VLMs that pass images through a VQ codebook tend to say "yes"
+to questions about objects that aren't there. We traced this to a specific
+routing pattern in decoder layer 0, where the last prompt token attends broadly
+to the visual tokens in a way that is largely independent of what the image
+actually contains. Continuous-projector VLMs (CLIP + MLP, as in LLaVA) don't show
+it. Ablating layer 0 attenuates the behavior, and swapping a continuous projector
+for a VQ one installs it.
 
-## Repository layout
+This repository has the measurement code, the intervention code, the paired probe
+set, and the small benchmark used throughout.
 
-```
-unified_mech/
-├── micro_benchmark/          # 900-example raw benchmark (JSONL + images)
-│   ├── build_benchmark.py    # build script (run once to reproduce)
-│   ├── micro_benchmark.jsonl # 900 records, one per line
-│   └── images/
-│       ├── naturalbench/     # 103 MB — 300 JPEG images
-│       ├── pope/             #  15 MB — ~150 JPEG images
-│       └── hallusionbench/   # 7.6 MB — ~150 JPEG images
-│
-├── probe/                    # Python module — paired probe set + hook layer
-│   ├── __init__.py           # public API + build_probe_set()
-│   ├── schema.py             # ProbeRecord dataclass
-│   ├── naturalbench.py       # NaturalBench loader (300 records)
-│   ├── pope.py               # POPE loader (200 records)
-│   ├── cache.py              # precompute / load pixel-value tensors
-│   ├── cached/               # 518 MB precomputed cache
-│   │   ├── records.json
-│   │   ├── pixel_values.pt
-│   │   └── foil_pixel_values.pt
-│   └── hooks/                # activation-capture hook layer
-│       ├── __init__.py       # public API: LlavaHookManager, Capture, TokenCategory
-│       ├── schema.py         # TokenCategory, TokenIndex, Capture dataclasses
-│       ├── base.py           # abstract VLMHookManager (subclass for VILA-U in Week 3)
-│       ├── llava.py          # LlavaHookManager (LLaVA-1.6 concrete impl)
-│       ├── utils.py          # hook registration + finalization helpers
-│       └── test_hooks.py     # smoke test
-│
-├── DreamLLM/
-├── HaploVLM/
-├── LLaVA/
-├── Qwen3-VL/
-├── UniTok/
-├── VILA/
-└── vila-u/
-```
+## What's here
 
----
+`probe/` is the main Python package.
 
-## micro_benchmark — 900-example raw benchmark
+* `probe/hooks/` is the activation-capture layer. One hook manager per model
+  family, all subclassing `VLMHookManager`. Currently: LLaVA-1.6, VILA, VILA-U,
+  UniTok, Chameleon, Anole, Liquid, Janus, Emu3, SEED-LLaMA, Show-o, LaVIT,
+  Lumina-mGPT, HaploVLM, GILL, AnyGPT, Qwen2.5-VL, and the VQ/MLP LLaVA variants
+  we trained.
+* `probe/tracing/` holds the three diagnostic gates and the intervention library.
+* `probe/benchmarks/` runs POPE, AMBER, NaturalBench, HallusionBench, and CHAIR,
+  with interventions applied inline.
+* `probe/baselines/` implements VCD, DoLA, ITI, and VTI for comparison.
+* `probe/analysis/` is post-hoc analysis: bootstrap CIs, threshold sensitivity,
+  cohort summaries, CHAIR robustness checks.
+* `probe/training/` trains the projector variants used for the induction
+  experiment (VQ, FSQ, and a matched-compute MLP control).
 
-Built from three hallucination / visual-grounding datasets, all with yes/no
-answers (single-token targets for logit restoration).  Captioning data is
-explicitly excluded.
+`micro_benchmark/` is a 900-example yes/no benchmark drawn from NaturalBench,
+POPE, and HallusionBench, with images included. `scripts/` has sweep drivers and
+figure generators. `results/` holds a few small summary outputs; the bulk
+per-record generation logs are not checked in.
 
-| Source | Count | yes | no | Notes |
-|--------|------:|----:|---:|-------|
-| NaturalBench | 600 | 300 | 300 | yes/no questions only; paired image structure |
-| POPE (adversarial) | 150 | 75 | 75 | object existence questions |
-| HallusionBench (image) | 150 | 75 | 75 | illusion / math / figure / ocr / map subcategories |
-| **Total** | **900** | **450** | **450** | 50 % yes, 50 % no |
+## Setup
 
-### Record schema (`micro_benchmark.jsonl`)
-
-```jsonc
-{
-  "id":         "nb_1279_img0_q1",
-  "source":     "naturalbench",          // "naturalbench" | "pope" | "hallusionbench"
-  "pair_id":    "nb_1279",               // groups paired QA sharing the same image context
-  "image_path": "images/naturalbench/1279_img0.jpg",   // relative to micro_benchmark/
-  "question":   "Is there someone's hair red?",
-  "answer":     "no",                    // always lowercase "yes" or "no"
-  "metadata":   { ... }                  // source-specific extras
-}
-```
-
-### Rebuild
+You need Python 3.11 and a recent PyTorch with CUDA. Install the Python
+dependencies:
 
 ```bash
-source activate sae
-cd micro_benchmark/
-python build_benchmark.py
+pip install -r requirements.txt
 ```
 
-NaturalBench is downloaded from `BaiqiL/NaturalBench` on HuggingFace.
-POPE from `lmms-lab/POPE`, HallusionBench from `lmms-lab/HallusionBench`.
+Most of the model-specific hooks import from the upstream model repository rather
+than from `transformers`, so you need to clone whichever models you plan to run
+and put them on your `PYTHONPATH`. LLaVA needs one patch: `forward()` in
+`llava/model/language_model/llava_llama.py` must accept `cache_position`,
+`logits_to_keep`, and `**kwargs` to work with newer transformers.
 
----
+The benchmark loaders expect COCO `val2014` images and the AMBER data under
+`data/`, and CHAIR scoring needs COCO annotations in
+`probe/benchmarks/coco_annotations/`. None of that is checked in.
 
-## probe — paired probe set for activation patching
+Run everything from the repository root. Several modules resolve paths relative
+to the working directory.
 
-A Python module that exposes a **unified `(x, x′, q, y)` interface** over
-NaturalBench and POPE.  500 records total, precomputed pixel-value tensors
-saved to `probe/cached/`.
+## The probe set
 
-**Do not run tracing experiments on captioning data.**  The probe set
-contains only yes/no visual-grounding questions.
-
-### Composition
-
-| Source | Records | Pairs | Corruption mode |
-|--------|--------:|------:|-----------------|
-| NaturalBench | 300 | 150 pair_ids × 2 questions | `image_swap` |
-| POPE (adversarial) | 200 | 100 pair_ids × 2 questions | `gaussian_noise` |
-| **Total** | **500** | **250** | |
-
-Each `pair_id` groups exactly **2 records** — one "yes" and one "no" — sharing
-the same image context.  This makes it straightforward to set up a
-paired patching run.
-
-### Quick start
+500 paired records over NaturalBench and POPE. Every `pair_id` groups exactly two
+records, one answering "yes" and one answering "no", so you always have a minimal
+contrast to patch between. NaturalBench pairs are two different images against
+the same question; POPE pairs are two different questions against the same image,
+with corruption applied as noise on the visual embeddings.
 
 ```python
-# build once (downloads datasets, saves images, precomputes tensors)
-from probe import build_probe_set
-records, pixel_values, foil_pixel_values = build_probe_set()
+from probe import build_probe_set, load_cache, resolve_answer_token_ids
 
-# load on subsequent runs
-from probe import load_cache
-records, pixel_values, foil_pixel_values = load_cache()
-
-# attach answer token IDs once you have the model tokenizer
-from probe import resolve_answer_token_ids
+records, pixel_values, foil_pixel_values = build_probe_set()  # first run
+records, pixel_values, foil_pixel_values = load_cache()       # afterwards
 resolve_answer_token_ids(records, tokenizer)
 ```
 
-### ProbeRecord schema
+`build_probe_set()` downloads the source datasets and precomputes about 518 MB of
+pixel tensors into `probe/cached/`. That cache is not in the repository, so the
+first call takes a while.
 
-```python
-@dataclass
-class ProbeRecord:
-    id:                str
-    source:            "naturalbench" | "pope"
-    pair_id:           str          # groups the two paired records
-    image_path:        str          # absolute path to clean JPEG
-    foil_image_path:   str | None   # see corruption modes below
-    question:          str
-    answer:            "yes" | "no"
-    answer_token_id:   int | None   # None until resolve_answer_token_ids()
-    corruption_mode:   "image_swap" | "gaussian_noise"
-    metadata:          dict
-```
+Only yes/no visual-grounding questions are included. Don't run the tracing code
+on captioning data; the token-position bookkeeping assumes a single-token answer.
 
-### Corruption modes
+## The three gates
 
-**`image_swap` — NaturalBench**
+The diagnostic is a chain. A model has to pass all three to count as carrying the
+circuit.
 
-`x` and `x′` are two distinct real images.  For a given question `q`, one
-image answers "yes" and the other "no".  Both have real JPEG files on disk;
-`foil_image_path` points to `x′`.
-
-Typical patching protocol: run model on `x′`, collect residual-stream or
-attention activations at layer `l`, patch them into the forward pass on `x`,
-observe whether the logit for the correct answer is restored.
-
-**`gaussian_noise` — POPE**
-
-`x′` is `x` with zero-mean Gaussian noise injected into the **visual patch
-embeddings** after the visual encoder, before transformer layer 0.
-`foil_image_path` is `None` — there is no foil JPEG.  Noise must be applied
-at the visual-token level at inference time.
-
-Suggested noise scale: tune σ on a held-out set so that
-cosine-sim(clean embedding, noisy embedding) ≈ 0.5.
-
-The pairing for POPE: two questions on the **same image**, one with answer
-"yes" and one with answer "no", share a `pair_id`.  This lets experiments
-ask which components encode the presence/absence signal vs. question semantics.
-
-### Precomputed cache
-
-Images are preprocessed with a standard ViT-compatible transform
-(resize shortest edge to 336, centre-crop 336×336, ImageNet normalisation)
-and stored as **float16** tensors of shape `(3, 336, 336)`.
-
-| File | Contents | Size |
-|------|----------|------|
-| `cached/records.json` | all 500 ProbeRecord dicts (no tensors) | — |
-| `cached/pixel_values.pt` | `{id → tensor}` clean images, all 500 | |
-| `cached/foil_pixel_values.pt` | `{id → tensor}` foil images, NB only (300) | |
-| **Total** | | **518 MB** |
-
-Pass `transform=your_processor` to `build_cache()` to use a model-specific
-image processor instead of the default.  Pass `image_size=224` for
-CLIP-ViT-L/14 models.
-
-### Iterating paired records
-
-```python
-from itertools import groupby
-from probe import load_cache
-
-records, pv, foil_pv = load_cache()
-
-# sort by pair_id so groupby works
-records.sort(key=lambda r: r.pair_id)
-
-for pair_id, group in groupby(records, key=lambda r: r.pair_id):
-    pair = list(group)          # always length 2
-    yes_rec = next(r for r in pair if r.answer == "yes")
-    no_rec  = next(r for r in pair if r.answer == "no")
-
-    x_clean  = pv[yes_rec.id]                     # (3, 336, 336) float16
-    x_foil   = foil_pv.get(yes_rec.id)            # tensor or None (POPE)
-    # ... run patching experiment
-```
-
----
-
----
-
-## probe/hooks — activation-capture hook layer (LLaVA-1.6)
-
-Four hook points exposed during a single model forward pass:
-
-| # | Hook | Module | Shape |
-|---|------|--------|-------|
-| 1 | Projected visual tokens | `model.model.mm_projector` | `(num_crops, 576, H)` |
-| 2 | Self-attention output | `model.model.layers[i].self_attn` | `(n_layers, seq, H)` |
-| 3 | MLP output | `model.model.layers[i].mlp` | `(n_layers, seq, H)` |
-| 4 | Residual stream | `model.model.layers[i]` | `(n_layers, seq, H)` |
-
-### Token-category abstraction
-
-Every embedding position is tagged with one of four categories:
-
-| Category | Value | Positions |
-|----------|-------|-----------|
-| `OTHER`    | 0 | BOS, system prompt, chat-template scaffolding, role tags |
-| `VISUAL`   | 1 | Image patch tokens (including anyres newline tokens) |
-| `QUESTION` | 2 | User's question text |
-| `ANSWER`   | 3 | Model-generated tokens (generate mode only) |
-
-This mapping is built **inside the hook layer**, not in the tracing code, so
-heatmap axes stay comparable when porting to VILA-U in Week 3.  Only
-`LlavaHookManager._locate_assistant_tag()` needs to be overridden per model.
-
-### Quick start
-
-```python
-from probe.hooks import LlavaHookManager, TokenCategory
-
-# load model (done once outside the loop)
-from llava.model.builder import load_pretrained_model
-from llava.mm_utils import get_model_name_from_path
-tokenizer, model, image_processor, _ = load_pretrained_model(
-    model_path, model_base=None,
-    model_name=get_model_name_from_path(model_path),
-    attn_implementation="sdpa",
-)
-model.eval()
-
-hm = LlavaHookManager(model, tokenizer, image_processor)
-
-# prefill — primary path for yes/no logit restoration
-cap = hm.run_prefill(image=PIL_img, question="Is there a cat?")
-
-# generate — captures prefill + all decode steps
-cap = hm.run_generate(image=PIL_img, question="Is there a cat?",
-                      max_new_tokens=8)
-
-# analysis
-last_res  = cap.last_token_residual()                      # (32, 4096)
-vis_res   = cap.by_category(TokenCategory.VISUAL)          # (32, n_img, 4096)
-ans_res   = cap.by_category(TokenCategory.ANSWER)          # (32, n_gen, 4096)
-logit_map = cap.logit_lens(model.lm_head, model.model.norm) # (32, seq, vocab)
-yes_no    = cap.logits[cap.token_index.prompt_last, [yes_id, no_id]]
-```
-
-Opt-in attention weights (requires `attn_implementation="eager"`):
-
-```python
-hm = LlavaHookManager(model, tokenizer, image_processor,
-                      capture_attention_weights=True)
-cap = hm.run_prefill(img, q)
-# cap.attn_weights: (n_layers, n_heads, seq_len, seq_len)
-```
-
-### Smoke test
+Gate A.1 asks whether corrupting the visual tokens produces an early, peaked
+divergence in the residual stream at the last prompt position:
 
 ```bash
-source activate sae
-cd /scratch/shegde23/unified_mech
-
-# structural tests only (no GPU needed)
-python -m probe.hooks.test_hooks
-
-# full real-model tests
-python -m probe.hooks.test_hooks --model_path /path/to/llava-v1.6-vicuna-7b
+python -m probe.tracing.residual_divergence \
+    --backend vilau --model_path mit-han-lab/vila-u-7b-256 \
+    --sigma 1.0 --out results/residual_divergence_vilau.json
 ```
 
----
-
-## Environment
+Gate A.2 measures how much layer-0 attention mass runs from the last prompt token
+to the visual tokens:
 
 ```bash
-source activate sae   # Python 3.11, torch 2.11+cu130, transformers 4.57
+python -m probe.tracing.attn_head_weights \
+    --backend vilau --model_path mit-han-lab/vila-u-7b-256 \
+    --out results/attn_head_weights_vilau.json
 ```
 
-Required packages: `datasets`, `torch`, `torchvision`, `Pillow`, `tqdm`.
+Gate A.3 checks whether noise pushes visual embeddings off the codebook manifold,
+which only applies to models with a collapsed VQ codebook:
+
+```bash
+python -m probe.tracing.codebook_probe_offmanifold \
+    --backend llava_vq --model_path liuhaotian/llava-v1.6-vicuna-7b \
+    --projector_ckpt checkpoints/llava_vq/projector_final.pt \
+    --sweep results/sweep_llava_vq.jsonl \
+    --n_records 200 --sigma 2.0 \
+    --out results/codebook_probe_llava_vq.jsonl
+```
+
+The thresholds are 0.4, 15, and 80% respectively. Gate A.2 uses a two-tier rule
+because projector-amplified and unified-vocab architectures concentrate their
+routing mass differently. `probe/analysis/gate_threshold_sensitivity.py` sweeps
+all three thresholds and reports how many verdicts flip, which is the honest way
+to check the thresholds weren't fitted to the outcome.
+
+## Interventions
+
+`run_bench.py` applies interventions inline on the binary benchmarks:
+
+```bash
+python -m probe.benchmarks.run_bench \
+    --bench pope_full --backend vilau \
+    --model_path mit-han-lab/vila-u-7b-256 \
+    --knockout_layer 0 \
+    --out results/bench_pope_vilau_L0.jsonl
+```
+
+The canonical intervention zeroes the whole self-attention output of layer 0. It
+is registered as `pathological_route_ablation`; `full_zero` still works as a
+deprecated alias. There are also selective (per-head) and scalar (scaled rather
+than zeroed) variants, which matter for the dose-response analysis.
+
+For open-ended captioning, `run_chair.py` does the same thing during generation.
+This is where the intervention separates from the decoding-time baselines: tuned
+DoLA wins on binary yes/no calibration, but only the layer-0 ablation moves CHAIR
+on free-form captions.
+
+## Caveats
+
+The layer-0 ablation is not uniformly safe. On some architectures it is close to
+harmless, on others it is catastrophic, and on at least one model it produces a
+degenerate emitter that scores well only because it stops producing real output.
+`probe/tracing/liquid_residual_localization.py` exists specifically to
+distinguish that case from a genuine effect, and the sanity-check reporters flag
+it. Check the logit-gap output before reading an accuracy gain as real.
+
+Gate A.2 is not measurable on every model. Some vendored backbones never
+materialize attention weights, so the hook manager raises rather than silently
+returning zeros.
+
+## Tests
+
+```bash
+python -m probe.hooks.test_hooks                    # structural, no GPU
+python -m probe.hooks.test_hooks --model_path ...   # full, needs GPU
+```
+
+There are per-model test modules alongside it for the other backends.

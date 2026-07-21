@@ -199,7 +199,7 @@ def main() -> None:
                         choices=["all", "naturalbench", "pope"])
     parser.add_argument("--report_only", action="store_true",
                         help="Skip forward passes; just print report from --out")
-    # N-040A/C: optional intervention applied around every run_prefill call
+    #/C: optional intervention applied around every run_prefill call
     parser.add_argument(
         "--knockout_mode",
         choices=[
@@ -211,8 +211,8 @@ def main() -> None:
         ],
         default=None,
         help="If set, apply intervention from head_knockout.py (full_zero is deprecated alias); "
-             "vti_textual (N-047) requires --vti_direction; "
-             "projector_scale (N-057) multiplies projector output by --alpha",
+             "vti_textual requires --vti_direction; "
+             "projector_scale multiplies projector output by --alpha",
     )
     parser.add_argument("--knockout_layer", type=int, default=0)
     parser.add_argument(

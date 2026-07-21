@@ -1,4 +1,4 @@
-"""Aggregate N-042 benchmark results into a paper-ready summary table.
+"""Aggregate benchmark results into a paper-ready summary table.
 
 Reads all results/bench_*.meta.json sidecars (written by run_bench.py),
 builds a tidy (model, bench, mode) → metrics table, writes:
@@ -218,7 +218,7 @@ def render_figure(table: dict, out_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Aggregate N-042 benchmark results into a summary table + figure"
+        description="Aggregate benchmark results into a summary table + figure"
     )
     parser.add_argument("--results_dir", default="results",
                         help="Directory containing bench_*.meta.json files")
@@ -238,7 +238,7 @@ def main() -> None:
     print(f"Loaded {len(metas)} meta files from {results_dir}")
 
     if not metas:
-        print("No meta files found. Run N-042 sweep first.")
+        print("No meta files found. Run the sweep first.")
         return
 
     table = build_table(metas)

@@ -1,23 +1,23 @@
 """
-Sub-test B (off-manifold substitution) for UniTok — N-031D.
+Sub-test B (off-manifold substitution) for UniTok —.
 
 Tests whether UniTok's post-projector embeddings share VILA-U's off-manifold substitution
 property: after adding calibrated Gaussian noise (σ=0.2, UniTok's σ_cal), does the noisy
 embedding land closer to a different record's clean embedding than to its own?
 
-VILA-U result (N-022): 100% of 20 POPE records showed substitution.
-UniTok hypothesis (N-031C): richer projector (TokenEmbedder) → denser manifold → lower rate.
+VILA-U result: 100% of 20 POPE records showed substitution.
+UniTok hypothesis: richer projector (TokenEmbedder) → denser manifold → lower rate.
 
 Sub-test A (VQ code sensitivity) is VILA-U-specific (RQ-VAE) and is intentionally omitted.
 The correct filter is omitted because accuracy_unitok.jsonl does not exist; correct_filter_applied=false
-is written on every output row so the difference from N-022 is auditable.
+is written on every output row so the difference is auditable.
 
 Usage
 ─────
     conda activate unitok
     python -m probe.tracing.codebook_probe_unitok \\
         --model_path FoundationVision/unitok_mllm \\
-        --tokenizer_path /home/shegde23/VLM_Attention_Psych/UniTok/checkpoint/unitok_tokenizer.pth \\
+        --tokenizer_path /path/to/UniTok/checkpoint/unitok_tokenizer.pth \\
         --sweep    results/sweep_unitok.jsonl \\
         --n_records 20 \\
         --sigma 0.2 \\
@@ -116,7 +116,7 @@ def print_report(rows: list[dict]) -> None:
     print(f"\n{sep}")
     print("SUB-TEST B: off-manifold effect (post-projector noise, σ=σ_cal)")
     print("Backend: UniTok  |  correct_filter_applied: False")
-    print("Comparison: VILA-U N-022 (cos_self=0.38, cos_other=0.87, pct=100%)")
+    print("Comparison: VILA-U (cos_self=0.38, cos_other=0.87, pct=100%)")
     print(sep)
 
     n = len(b_rows)
@@ -145,7 +145,7 @@ def print_report(rows: list[dict]) -> None:
     elif pct_closer < 80:
         verdict = "PARTIAL      — geometry argument needs more nuance"
     else:
-        verdict = "SUBSTITUTION — contradicts N-031C hypothesis; revisit thesis"
+        verdict = "SUBSTITUTION — contradicts hypothesis; revisit thesis"
 
     print(f"\n  Verdict: {verdict}")
     print(f"  (>80% closer to wrong record = off-manifold substitution like VILA-U)")
@@ -253,7 +253,7 @@ def run_probe(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Sub-test B (off-manifold substitution) for UniTok (N-031D)"
+        description="Sub-test B (off-manifold substitution) for UniTok"
     )
     parser.add_argument("--model_path",     default="FoundationVision/unitok_mllm")
     parser.add_argument("--tokenizer_path", default=None,

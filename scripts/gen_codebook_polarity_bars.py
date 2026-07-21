@@ -29,11 +29,11 @@ FIG_OUT.mkdir(parents=True, exist_ok=True)
 
 # ── palette ───────────────────────────────────────────────────────────────────
 C_NEUTRAL     = "#969696"
-C_SUPPRESS    = "#d73027"
-C_PROMOTE     = "#4575b4"
+C_SUPPRESS    = "#4575b4"
+C_PROMOTE     = "#d73027"
 C_NEUTRAL_L0  = "#cccccc"
-C_SUPPRESS_L0 = "#f4a582"
-C_PROMOTE_L0  = "#abd9e9"
+C_SUPPRESS_L0 = "#abd9e9"
+C_PROMOTE_L0  = "#f4a582"
 C_DIAG        = "#999999"
 
 POLARITY_COLORS = {
@@ -56,11 +56,11 @@ plt.rcParams.update({
 # ── data ──────────────────────────────────────────────────────────────────────
 variants = [
     dict(label="$K{=}1024$",            base=32.4, l0=32.9, polarity="neutral"),
-    dict(label="$K{=}4096$",            base=79.8, l0=93.2, polarity="suppressing"),
-    dict(label="$K{=}16384$",           base=85.5, l0=14.1, polarity="promoting"),
-    dict(label="$K{=}65536$",           base=87.2, l0=64.4, polarity="promoting"),
-    dict(label="FSQ v1\n[8,8,8,5,5,5]", base=2.6,  l0=61.0, polarity="suppressing"),
-    dict(label="FSQ v2\n[7,7,7,6,5,5]", base=1.4,  l0=54.7, polarity="suppressing"),
+    dict(label="$K{=}4096$",            base=79.8, l0=93.2, polarity="promoting"),
+    dict(label="$K{=}16384$",           base=85.5, l0=14.1, polarity="suppressing"),
+    dict(label="$K{=}65536$",           base=87.2, l0=64.4, polarity="suppressing"),
+    dict(label="FSQ v1\n[8,8,8,5,5,5]", base=2.6,  l0=61.0, polarity="promoting"),
+    dict(label="FSQ v2\n[7,7,7,6,5,5]", base=1.4,  l0=54.7, polarity="promoting"),
 ]
 
 # natural specimens: (codebook mean yes-rate, behavioral POPE yes-rate, polarity)

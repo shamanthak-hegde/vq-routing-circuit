@@ -1,4 +1,4 @@
-"""Matched-compute LLaVA-MLP control training (N-081).
+"""Matched-compute LLaVA-MLP control training.
 
 Trains a 2-layer GeLU MLP projector for LLaVA-1.6 under *identical*
 hyperparameters as train_llava_vq.py (LLaVA-VQ v1):
@@ -11,8 +11,8 @@ hyperparameters as train_llava_vq.py (LLaVA-VQ v1):
 No VQ bottleneck → no codebook collapse → prediction: L0 routing circuit
 does NOT form; gate A.2 fails; POPE yes-rate remains near-calibrated.
 
-This is the strongest control against the reviewer critique "maybe the
-pathology comes from brief projector-only training, not VQ specifically."
+This is the strongest control against the objection "maybe the pathology comes
+from brief projector-only training, not VQ specifically."
 
 Usage:
     source activate sae
@@ -270,7 +270,7 @@ def train(args: argparse.Namespace) -> None:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(
-        description="Matched-compute LLaVA-MLP control training (N-081)"
+        description="Matched-compute LLaVA-MLP control training"
     )
     parser.add_argument("--model_path", default="liuhaotian/llava-v1.6-vicuna-7b")
     parser.add_argument("--data_json", required=True)
