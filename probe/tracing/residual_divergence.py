@@ -37,9 +37,6 @@ Usage
         --sigma 0.1 \\
         --source naturalbench \\
         --out results/residual_divergence_showo.json
-
-    # Figure (any env with matplotlib)
-    python -m probe.tracing.residual_divergence_figure
 """
 
 from __future__ import annotations

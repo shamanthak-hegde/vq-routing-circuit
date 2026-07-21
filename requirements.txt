@@ -7,8 +7,6 @@ numpy
 Pillow
 tqdm
 matplotlib
-pandas
-seaborn
 scikit-learn
 
 # CHAIR caption scoring only

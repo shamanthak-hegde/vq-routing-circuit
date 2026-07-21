@@ -1,4 +1,4 @@
-# vq-routing-circuit
+# VQ-routing-circuit
 
 Tools for measuring an early-layer attention routing circuit in vision-language
 models that encode images with a vector-quantized codebook, and for turning that
@@ -165,9 +165,12 @@ circuit; the matched MLP does not.
 ## Other tools
 
 `probe/analysis/` has bootstrap confidence intervals, threshold stability checks,
-and CHAIR robustness re-analysis. `scripts/gen_*.py` regenerate figures from
-results already on disk. `scripts/sweep_analysis.py` builds per-layer heatmaps
-from a sweep file.
+and CHAIR robustness re-analysis, all of which read result files already on disk
+and need no GPU. `probe/benchmarks/summarize.py` collects benchmark runs into one
+table.
+
+This repository holds experiment code only. The scripts that drew the paper
+figures are not included.
 
 ## Tests
 
