@@ -1,12 +1,12 @@
 """Consolidated qualitative report: VLMs asked where a (hallucinated) object is.
 
-Writes all panels plus REPORT.md into a single folder (figures/defense_report/).
+Writes all panels plus REPORT.md into a single folder (figures/location_report/).
 Panels are minimal: model, image name, ground truth, the yes/no question and
 answer, and the "where" question and answer. No reasoning, no arrows, no em
 dashes.
 
     module load mamba; source activate sae
-    python scripts/gen_defense_report.py
+    python scripts/gen_location_report.py
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from PIL import Image
 
 CACHES = ["results/pope_records_cache_50.json",
           "results/pope_records_cache_50_350.json"]
-OUT = Path("figures/defense_report")
+OUT = Path("figures/location_report")
 
 # (file, model, record, object, where_answer)
 CASES = [

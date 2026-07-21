@@ -6,7 +6,7 @@ Panel B (middle): Gate-status colored grid (~22 models × 3 gates)
 Panel C (right):  CHAIRi dissociation — VILA-U, 4 methods
 
 Run from repo root:
-    source activate sae && python scripts/gen_hero_figure.py
+    source activate sae && python scripts/gen_overview_figure.py
 
 Output:
     figures/hero/hero_3panel.png   (200 dpi, for paper)

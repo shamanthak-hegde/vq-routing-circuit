@@ -8,7 +8,7 @@ follow-up with several prompt variants and report, for each:
 
 Usage:
     module load mamba; source activate vila-u
-    python -m probe.benchmarks.vilau_halluc_probe \
+    python -m probe.benchmarks.vilau_hallucination_probe \
         --model_path mit-han-lab/vila-u-7b-256 \
         --records_json results/pope_records_cache_50.json \
         --fp_jsonl results/halluc_followup_vilau.jsonl

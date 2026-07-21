@@ -7,7 +7,7 @@ fabricating an object from nothing. Transcripts are mined from already-inferred
 runs (no GPU). Each case visually verified.
 
     module load mamba; source activate sae
-    python scripts/gen_continuous_samples.py
+    python scripts/gen_continuous_model_panels.py
 """
 
 from __future__ import annotations

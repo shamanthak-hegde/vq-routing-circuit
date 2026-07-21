@@ -4,7 +4,7 @@ Each panel: the real image (which does NOT contain the queried object) beside th
 multi-turn transcript(s) of one or more models confabulating its location.
 
     module load mamba; source activate sae
-    python scripts/gen_where_qualitative.py
+    python scripts/gen_location_panels.py
 """
 
 from __future__ import annotations

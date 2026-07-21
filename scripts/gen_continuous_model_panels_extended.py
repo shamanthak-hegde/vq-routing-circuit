@@ -9,7 +9,7 @@ Qwen still essentially does not fabricate — its new FPs are a label error
 (bottles in a shower) and a self-correction (wakeboard, not skis).
 
     module load mamba; source activate sae
-    python scripts/gen_llava_qwen_more.py
+    python scripts/gen_continuous_model_panels_extended.py
 """
 
 from __future__ import annotations

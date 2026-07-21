@@ -12,7 +12,7 @@ Writes per-case JSONL (every attempt) and prints a readable transcript.
 
 Usage:
     module load mamba; source activate <env>
-    python -m probe.benchmarks.halluc_where_report \
+    python -m probe.benchmarks.hallucination_location_report \
         --backend llava --model_path liuhaotian/llava-v1.6-vicuna-7b \
         --records_json results/pope_records_cache_50.json \
         --max_records 50 --max_cases 8 \

@@ -7,7 +7,7 @@ Each case was visually verified against the image. Image left, transcript +
 "why it's obviously wrong" right.
 
     module load mamba; source activate sae
-    python scripts/gen_obvious_wrong_location.py
+    python scripts/gen_wrong_location_panels.py
 """
 
 from __future__ import annotations

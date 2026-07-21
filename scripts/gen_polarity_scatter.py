@@ -23,7 +23,7 @@ ROOT = Path(__file__).parent.parent
 FIG_OUT = ROOT / "figures" / "polarity"
 FIG_OUT.mkdir(parents=True, exist_ok=True)
 
-# ── palette (matches gen_hero_figure.py) ─────────────────────────────────────
+# ── palette (matches gen_overview_figure.py) ─────────────────────────────────────
 C_YES  = "#2166ac"   # yes-biased natural specimens
 C_NO   = "#b2182b"   # no-biased natural specimen (Chameleon)
 C_FSQ  = "#4dac26"   # FSQ annotations (yes-suppressing)

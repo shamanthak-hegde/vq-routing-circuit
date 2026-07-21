@@ -25,7 +25,7 @@ ROOT    = Path(__file__).parent.parent
 FIG_OUT = ROOT / "figures" / "matched_compute"
 FIG_OUT.mkdir(parents=True, exist_ok=True)
 
-# ── colour palette (matches gen_hero_figure.py) ──────────────────────────────
+# ── colour palette (matches gen_overview_figure.py) ──────────────────────────────
 C_VQ  = "#762a83"   # induced VQ
 C_MLP = "#969696"   # MLP / continuous control
 C_BASE = "#d73027"  # base (pre-ablation) bar

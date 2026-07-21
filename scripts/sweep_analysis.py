@@ -3,22 +3,22 @@
 Usage
 -----
     # Single file
-    python full_sweep_analysis.py --results results/sweep_llava.jsonl
+    python scripts/sweep_analysis.py --results results/sweep_llava.jsonl
 
     # Merge multiple files (e.g. naturalbench from one run, pope multi-seed from another)
-    python full_sweep_analysis.py \\
+    python scripts/sweep_analysis.py \\
         --results results/sweep_llava.jsonl results/sweep_pope_multiseed.jsonl
 
     When the same record_id appears in multiple files, the last file wins.
 
     # 2-model comparison (LLaVA vs VILA-U)
-    python full_sweep_analysis.py --compare \\
+    python scripts/sweep_analysis.py --compare \\
         --llava results/sweep_llava.jsonl results/sweep_pope_multiseed.jsonl \\
         --vilau results/sweep_vilau.jsonl \\
         --out_dir figures/comparison
 
     # 3-model comparison (LLaVA | VILA | VILA-U + two Δ columns)
-    python full_sweep_analysis.py --compare \\
+    python scripts/sweep_analysis.py --compare \\
         --llava results/sweep_llava.jsonl results/sweep_pope_multiseed.jsonl \\
         --vila  results/sweep_vila.jsonl \\
         --vilau results/sweep_vilau.jsonl \\

@@ -8,7 +8,7 @@ VILA-U's free-text generation is too degenerate to localize reliably.
 
 Usage:
     module load mamba; source activate vila-u
-    python -m probe.benchmarks.vilau_halluc_attention \
+    python -m probe.benchmarks.vilau_hallucination_attention \
         --model_path mit-han-lab/vila-u-7b-256 \
         --records_json results/pope_records_cache_50.json \
         --fp_jsonl results/halluc_followup_vilau.jsonl \

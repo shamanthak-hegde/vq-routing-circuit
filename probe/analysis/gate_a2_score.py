@@ -13,7 +13,7 @@ Results written to:
 
 Usage:
     source activate sae
-    python -m probe.analysis.unified_a2_score
+    python -m probe.analysis.gate_a2_score
 """
 
 from __future__ import annotations

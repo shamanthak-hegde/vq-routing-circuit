@@ -1,94 +1,60 @@
 # vq-routing-circuit
 
-Code for studying an early-layer attention routing circuit in vision-language
-models that tokenize images through a vector-quantized codebook.
+Tools for measuring an early-layer attention routing circuit in vision-language
+models that encode images with a vector-quantized codebook, and for turning that
+circuit off to see what changes.
 
-The short version: VLMs that pass images through a VQ codebook tend to say "yes"
-to questions about objects that aren't there. We traced this to a specific
-routing pattern in decoder layer 0, where the last prompt token attends broadly
-to the visual tokens in a way that is largely independent of what the image
-actually contains. Continuous-projector VLMs (CLIP + MLP, as in LLaVA) don't show
-it. Ablating layer 0 attenuates the behavior, and swapping a continuous projector
-for a VQ one installs it.
+Models with this circuit tend to answer "yes" when asked about objects that are
+not in the image. The code here lets you test a model for the circuit, ablate it,
+and measure the effect on hallucination benchmarks.
 
-This repository has the measurement code, the intervention code, the paired probe
-set, and the small benchmark used throughout.
+## Install
 
-## What's here
-
-`probe/` is the main Python package.
-
-* `probe/hooks/` is the activation-capture layer. One hook manager per model
-  family, all subclassing `VLMHookManager`. Currently: LLaVA-1.6, VILA, VILA-U,
-  UniTok, Chameleon, Anole, Liquid, Janus, Emu3, SEED-LLaMA, Show-o, LaVIT,
-  Lumina-mGPT, HaploVLM, GILL, AnyGPT, Qwen2.5-VL, and the VQ/MLP LLaVA variants
-  we trained.
-* `probe/tracing/` holds the three diagnostic gates and the intervention library.
-* `probe/benchmarks/` runs POPE, AMBER, NaturalBench, HallusionBench, and CHAIR,
-  with interventions applied inline.
-* `probe/baselines/` implements VCD, DoLA, ITI, and VTI for comparison.
-* `probe/analysis/` is post-hoc analysis: bootstrap CIs, threshold sensitivity,
-  cohort summaries, CHAIR robustness checks.
-* `probe/training/` trains the projector variants used for the induction
-  experiment (VQ, FSQ, and a matched-compute MLP control).
-
-`micro_benchmark/` is a 900-example yes/no benchmark drawn from NaturalBench,
-POPE, and HallusionBench, with images included. `scripts/` has sweep drivers and
-figure generators. `results/` holds a few small summary outputs; the bulk
-per-record generation logs are not checked in.
-
-## Setup
-
-You need Python 3.11 and a recent PyTorch with CUDA. Install the Python
-dependencies:
+Python 3.11 and a CUDA build of PyTorch.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Most of the model-specific hooks import from the upstream model repository rather
-than from `transformers`, so you need to clone whichever models you plan to run
-and put them on your `PYTHONPATH`. LLaVA needs one patch: `forward()` in
-`llava/model/language_model/llava_llama.py` must accept `cache_position`,
-`logits_to_keep`, and `**kwargs` to work with newer transformers.
+Each model family is loaded through its own upstream repository, so clone the
+models you want to run and add them to `PYTHONPATH`. For LLaVA, edit
+`llava/model/language_model/llava_llama.py` so `forward()` accepts
+`cache_position`, `logits_to_keep`, and `**kwargs`; without that it fails on
+current transformers.
 
-The benchmark loaders expect COCO `val2014` images and the AMBER data under
-`data/`, and CHAIR scoring needs COCO annotations in
-`probe/benchmarks/coco_annotations/`. None of that is checked in.
+Datasets are not included. Put COCO `val2014` and AMBER under `data/`, and COCO
+annotations under `probe/benchmarks/coco_annotations/`.
 
-Run everything from the repository root. Several modules resolve paths relative
-to the working directory.
+Run every command from the repository root.
 
-## The probe set
+## Build the probe set
 
-500 paired records over NaturalBench and POPE. Every `pair_id` groups exactly two
-records, one answering "yes" and one answering "no", so you always have a minimal
-contrast to patch between. NaturalBench pairs are two different images against
-the same question; POPE pairs are two different questions against the same image,
-with corruption applied as noise on the visual embeddings.
+Downloads the source datasets and caches the preprocessed images, about 518 MB
+into `probe/cached/`. Do this once before anything else.
+
+```bash
+python -c "from probe import build_probe_set; build_probe_set()"
+```
+
+Afterwards, load it in Python:
 
 ```python
-from probe import build_probe_set, load_cache, resolve_answer_token_ids
-
-records, pixel_values, foil_pixel_values = build_probe_set()  # first run
-records, pixel_values, foil_pixel_values = load_cache()       # afterwards
+from probe import load_cache, resolve_answer_token_ids
+records, pixel_values, foil_pixel_values = load_cache()
 resolve_answer_token_ids(records, tokenizer)
 ```
 
-`build_probe_set()` downloads the source datasets and precomputes about 518 MB of
-pixel tensors into `probe/cached/`. That cache is not in the repository, so the
-first call takes a while.
+You get 500 records in 250 pairs. Each pair is one "yes" record and one "no"
+record, so you always have a minimal contrast to patch between. All questions are
+yes/no. The tracing code assumes a single-token answer, so it will not work on
+captioning data.
 
-Only yes/no visual-grounding questions are included. Don't run the tracing code
-on captioning data; the token-position bookkeeping assumes a single-token answer.
+## Test a model for the circuit
 
-## The three gates
+Three measurements. A model needs all three to count as carrying the circuit.
 
-The diagnostic is a chain. A model has to pass all three to count as carrying the
-circuit.
-
-Gate A.1 asks whether corrupting the visual tokens produces an early, peaked
-divergence in the residual stream at the last prompt position:
+Does corrupting the image move the residual stream early, at the last prompt
+position? Threshold 0.4.
 
 ```bash
 python -m probe.tracing.residual_divergence \
@@ -96,8 +62,8 @@ python -m probe.tracing.residual_divergence \
     --sigma 1.0 --out results/residual_divergence_vilau.json
 ```
 
-Gate A.2 measures how much layer-0 attention mass runs from the last prompt token
-to the visual tokens:
+How much layer-0 attention runs from the last prompt token to the image tokens?
+Threshold 15.
 
 ```bash
 python -m probe.tracing.attn_head_weights \
@@ -105,8 +71,8 @@ python -m probe.tracing.attn_head_weights \
     --out results/attn_head_weights_vilau.json
 ```
 
-Gate A.3 checks whether noise pushes visual embeddings off the codebook manifold,
-which only applies to models with a collapsed VQ codebook:
+Does noise push the image embeddings off the codebook? Threshold 80 percent.
+Only applies to models whose codebook has collapsed.
 
 ```bash
 python -m probe.tracing.codebook_probe_offmanifold \
@@ -117,62 +83,105 @@ python -m probe.tracing.codebook_probe_offmanifold \
     --out results/codebook_probe_llava_vq.jsonl
 ```
 
-The thresholds are 0.4, 15, and 80% respectively. Gate A.2 uses a two-tier rule
-because projector-amplified and unified-vocab architectures concentrate their
-routing mass differently. `probe/analysis/gate_threshold_sensitivity.py` sweeps
-all three thresholds and reports how many verdicts flip, which is the honest way
-to check the thresholds weren't fitted to the outcome.
-
-## Interventions
-
-`run_bench.py` applies interventions inline on the binary benchmarks:
+To check the thresholds are not tuned to give the answer you want, sweep them and
+count how many models change verdict:
 
 ```bash
+python -m probe.analysis.gate_threshold_sensitivity
+```
+
+Supported backends are in `probe/hooks/`: LLaVA-1.6, VILA, VILA-U, UniTok,
+Chameleon, Anole, Liquid, Janus, Emu3, SEED-LLaMA, Show-o, LaVIT, Lumina-mGPT,
+HaploVLM, GILL, AnyGPT, Qwen2.5-VL, and trained LLaVA variants. Pass the name as
+`--backend`. To add a model, subclass `VLMHookManager` in `probe/hooks/base.py`.
+
+## Turn the circuit off
+
+Run a benchmark with and without the ablation and compare. Works on POPE, AMBER,
+NaturalBench, and HallusionBench.
+
+```bash
+# baseline
 python -m probe.benchmarks.run_bench \
     --bench pope_full --backend vilau \
     --model_path mit-han-lab/vila-u-7b-256 \
-    --knockout_layer 0 \
+    --out results/bench_pope_vilau_baseline.jsonl
+
+# layer 0 ablated
+python -m probe.benchmarks.run_bench \
+    --bench pope_full --backend vilau \
+    --model_path mit-han-lab/vila-u-7b-256 \
+    --knockout_mode pathological_route_ablation --knockout_layer 0 \
     --out results/bench_pope_vilau_L0.jsonl
 ```
 
-The canonical intervention zeroes the whole self-attention output of layer 0. It
-is registered as `pathological_route_ablation`; `full_zero` still works as a
-deprecated alias. There are also selective (per-head) and scalar (scaled rather
-than zeroed) variants, which matter for the dose-response analysis.
+`pathological_route_ablation` zeroes the whole self-attention output of the
+layer. `--knockout_mode` is required; without it the run is a baseline even if
+you pass `--knockout_layer`. To zero single heads instead, use
+`--knockout_mode selective --heads 6,7,14`. To scale the output rather than zero
+it, use `--knockout_mode scalar --alpha 0.5`.
 
-For open-ended captioning, `run_chair.py` does the same thing during generation.
-This is where the intervention separates from the decoding-time baselines: tuned
-DoLA wins on binary yes/no calibration, but only the layer-0 ablation moves CHAIR
-on free-form captions.
+Valid `--bench` values are `pope_full`, `amber`, `nb_full`, and `hb`.
 
-## Caveats
+For free-form captioning, scored with CHAIR:
 
-The layer-0 ablation is not uniformly safe. On some architectures it is close to
-harmless, on others it is catastrophic, and on at least one model it produces a
-degenerate emitter that scores well only because it stops producing real output.
-`probe/tracing/liquid_residual_localization.py` exists specifically to
-distinguish that case from a genuine effect, and the sanity-check reporters flag
-it. Check the logit-gap output before reading an accuracy gain as real.
+```bash
+python -m probe.benchmarks.run_chair --backend vilau \
+    --model_path mit-han-lab/vila-u-7b-256 \
+    --knockout_layer 0 \
+    --out results/chair_captions_vilau_L0.jsonl
+```
 
-Gate A.2 is not measurable on every model. Some vendored backbones never
-materialize attention weights, so the hook manager raises rather than silently
-returning zeros.
+Add `--smoke_test` to run four images and print the captions.
+
+Before believing an accuracy gain, check that the model is still producing real
+output. Some models go quiet under the ablation and score well only because they
+stopped answering. `probe/tracing/liquid_residual_localization.py` and the
+sanity-check reporters in `probe/tracing/` exist to catch that.
+
+## Compare against other methods
+
+VCD, DoLA, ITI, and VTI are in `probe/baselines/`. Run them through the same
+benchmark runner with `--decoder vcd` or `--decoder dola`, then:
+
+```bash
+bash scripts/run_decoder_baseline_sweep.sh
+python scripts/summarize_decoder_baselines.py
+```
+
+## Build the circuit into a model
+
+`probe/training/` trains replacement projectors for LLaVA-1.6: a VQ projector, an
+FSQ projector that does not collapse, and a plain MLP trained on the same data
+for the same number of steps as a control.
+
+```bash
+bash scripts/run_train_llava_vq.sh
+```
+
+Then run the three measurements on the result. A VQ projector installs the
+circuit; the matched MLP does not.
+
+## Other tools
+
+`probe/analysis/` has bootstrap confidence intervals, threshold stability checks,
+and CHAIR robustness re-analysis. `scripts/gen_*.py` regenerate figures from
+results already on disk. `scripts/sweep_analysis.py` builds per-layer heatmaps
+from a sweep file.
 
 ## Tests
 
 ```bash
-python -m probe.hooks.test_hooks                    # structural, no GPU
-python -m probe.hooks.test_hooks --model_path ...   # full, needs GPU
+python -m probe.hooks.test_hooks                    # no GPU needed
+python -m probe.hooks.test_hooks --model_path ...   # needs GPU
 ```
 
-There are per-model test modules alongside it for the other backends.
+Per-model versions sit next to it, for example `test_hooks_vilau.py`.
 
 ## License
 
-The code is MIT licensed; see LICENSE. Use it for research or anything else.
+MIT, see LICENSE. Use it for research or anything else.
 
-The images under `micro_benchmark/images/` are not ours to relicense. They come
-from NaturalBench, POPE, and HallusionBench, and the POPE and NaturalBench
-subsets ultimately derive from COCO. Those keep their upstream terms, so check
-the original datasets before redistributing the images. The MIT grant covers the
-code and the benchmark construction, not the underlying image data.
+The images in `micro_benchmark/images/` are not covered by that. They come from
+NaturalBench, POPE, and HallusionBench, and most trace back to COCO. Check those
+datasets' terms before redistributing the images.

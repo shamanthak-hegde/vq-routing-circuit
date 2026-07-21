@@ -14,7 +14,7 @@ are shape-comparable.
 
 Usage
 -----
-    python -m probe.tracing.a1_divergence_panel \\
+    python -m probe.tracing.gate_a1_figure \\
         [--results results/] [--out figures/residual_divergence/]
 """
 
@@ -105,7 +105,7 @@ def make_figure(results_dir: Path, out_dir: Path) -> Path | None:
     ax.legend(loc="upper right", fontsize=8.5, framealpha=0.95)
 
     fig.tight_layout()
-    out_path = out_dir / "a1_divergence_panel.png"
+    out_path = out_dir / "gate_a1_figure.png"
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out_path}")
