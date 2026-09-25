@@ -4,6 +4,13 @@ Tools for measuring an early-layer attention routing circuit in vision-language
 models that encode images with a vector-quantized codebook, and for turning that
 circuit off to see what changes.
 
+This repository accompanies **Where Hallucinations Live: A Cross-Architecture
+Circuit in VQ-Tokenized Vision-Language Models**, accepted to the EMNLP 2026
+Main Conference.
+
+[Project page](https://shamanthak-hegde.github.io/where-hallucinations-live/)
+| [arXiv](https://arxiv.org/abs/2609.29048)
+
 Models with this circuit tend to answer "yes" when asked about objects that are
 not in the image. The code here lets you test a model for the circuit, ablate it,
 and measure the effect on hallucination benchmarks.
@@ -188,3 +195,19 @@ MIT, see LICENSE. Use it for research or anything else.
 The images in `micro_benchmark/images/` are not covered by that. They come from
 NaturalBench, POPE, and HallusionBench, and most trace back to COCO. Check those
 datasets' terms before redistributing the images.
+
+## Citation
+
+```bibtex
+@misc{hegde2026hallucinationslivecrossarchitecturecircuit,
+  title         = {Where Hallucinations Live: A Cross-Architecture Circuit in
+                   {VQ}-Tokenized Vision-Language Models},
+  author        = {Shamanthak Hegde and Xiangrui Liu and Maitreya Patel and
+                   Yezhou Yang},
+  year          = {2026},
+  eprint        = {2609.29048},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CV},
+  url           = {https://arxiv.org/abs/2609.29048}
+}
+```
