@@ -1,15 +1,17 @@
-# VQ-routing-circuit
+<h1 align="center">Where Hallucinations Live</h1>
+
+<p align="center"><strong>A Cross-Architecture Circuit in VQ-Tokenized Vision-Language Models</strong></p>
+
+<h3 align="center">Accepted to EMNLP 2026 Main Conference</h3>
+
+<p align="center">
+  <a href="https://shamanthak-hegde.github.io/where-hallucinations-live/"><img src="https://img.shields.io/badge/Project-Page-2563EB?style=for-the-badge&amp;logo=githubpages&amp;logoColor=white" alt="Project Page"></a>
+  <a href="https://arxiv.org/abs/2609.29048"><img src="https://img.shields.io/badge/arXiv-2609.29048-B31B1B?style=for-the-badge&amp;logo=arxiv&amp;logoColor=white" alt="arXiv"></a>
+</p>
 
 Tools for measuring an early-layer attention routing circuit in vision-language
 models that encode images with a vector-quantized codebook, and for turning that
 circuit off to see what changes.
-
-This repository accompanies **Where Hallucinations Live: A Cross-Architecture
-Circuit in VQ-Tokenized Vision-Language Models**, accepted to the EMNLP 2026
-Main Conference.
-
-[Project page](https://shamanthak-hegde.github.io/where-hallucinations-live/)
-| [arXiv](https://arxiv.org/abs/2609.29048)
 
 Models with this circuit tend to answer "yes" when asked about objects that are
 not in the image. The code here lets you test a model for the circuit, ablate it,
